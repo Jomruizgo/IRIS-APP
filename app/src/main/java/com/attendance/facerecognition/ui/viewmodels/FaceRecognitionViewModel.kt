@@ -5,11 +5,15 @@ import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.attendance.facerecognition.data.local.database.AppDatabase
+import com.attendance.facerecognition.data.local.entities.AttendanceAudit
 import com.attendance.facerecognition.data.local.entities.AttendanceRecord
 import com.attendance.facerecognition.data.local.entities.AttendanceType
+import com.attendance.facerecognition.data.local.entities.AuditAction
 import com.attendance.facerecognition.data.local.entities.Employee
+import com.attendance.facerecognition.data.repository.AttendanceAuditRepository
 import com.attendance.facerecognition.data.repository.AttendanceRepository
 import com.attendance.facerecognition.data.repository.EmployeeRepository
+import com.google.gson.Gson
 import com.attendance.facerecognition.ml.DetectedFace
 import com.attendance.facerecognition.ml.FaceDetector
 import com.attendance.facerecognition.ml.FaceRecognizer
@@ -26,9 +30,11 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     private val database = AppDatabase.getDatabase(application)
     private val employeeRepository = EmployeeRepository(database.employeeDao())
     private val attendanceRepository = AttendanceRepository(database.attendanceDao())
+    private val auditRepository = AttendanceAuditRepository(database.attendanceAuditDao())
     private val faceDetector = FaceDetector()
     private val faceRecognizer = FaceRecognizer(application)
     private val livenessDetector = LivenessDetector()
+    private val gson = Gson()
 
     private val _uiState = MutableStateFlow<RecognitionUiState>(RecognitionUiState.Idle)
     val uiState: StateFlow<RecognitionUiState> = _uiState.asStateFlow()
@@ -36,19 +42,39 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     private val _currentChallenge = MutableStateFlow<com.attendance.facerecognition.ml.LivenessChallenge?>(null)
     val currentChallenge: StateFlow<com.attendance.facerecognition.ml.LivenessChallenge?> = _currentChallenge.asStateFlow()
 
+    private val _selectedType = MutableStateFlow<AttendanceType?>(null)
+    val selectedType: StateFlow<AttendanceType?> = _selectedType.asStateFlow()
+
     private var isProcessingFrame = false
     private var livenessVerified = false
     private var allEmployees: List<Employee> = emptyList()
+    private var lastInsertedRecordId: Long? = null
 
     // Umbral de confianza para reconocimiento
     private val confidenceThreshold = 0.85f
 
     /**
+     * Selecciona el tipo de asistencia (ENTRADA o SALIDA)
+     * Esta selección se valida después del reconocimiento
+     */
+    fun selectAttendanceType(type: AttendanceType) {
+        _selectedType.value = type
+        _uiState.value = RecognitionUiState.TypeSelected(type)
+    }
+
+    /**
      * Inicia el proceso de reconocimiento
+     * Requiere que se haya seleccionado un tipo previamente
      */
     fun startRecognition() {
         viewModelScope.launch {
             try {
+                // Verificar que se haya seleccionado tipo
+                if (_selectedType.value == null) {
+                    _uiState.value = RecognitionUiState.Error("Debes seleccionar ENTRADA o SALIDA primero")
+                    return@launch
+                }
+
                 // Cargar todos los empleados
                 allEmployees = employeeRepository.getAllEmployeesWithEmbeddings()
 
@@ -168,12 +194,44 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     }
 
     /**
-     * Registra la asistencia del empleado
+     * Registra la asistencia del empleado con validación del tipo seleccionado
      */
     private suspend fun registerAttendance(employee: Employee, confidence: Float) {
         try {
-            // Determinar tipo de registro (entrada o salida)
-            val recordType = attendanceRepository.getNextRecordType(employee.id)
+            val selectedType = _selectedType.value
+            if (selectedType == null) {
+                _uiState.value = RecognitionUiState.Error("No se ha seleccionado tipo de registro")
+                return
+            }
+
+            // Obtener último registro del empleado
+            val lastRecord = attendanceRepository.getLastRecordForEmployee(employee.id)
+
+            // VALIDACIÓN: No permitir ENTRADA si ya hay entrada sin salida
+            if (selectedType == AttendanceType.ENTRY) {
+                if (lastRecord != null && lastRecord.type == AttendanceType.ENTRY) {
+                    _uiState.value = RecognitionUiState.ValidationError(
+                        employee = employee,
+                        selectedType = selectedType,
+                        lastRecord = lastRecord,
+                        message = "Ya tienes ENTRADA sin SALIDA registrada el ${formatTimestamp(lastRecord.timestamp)}\n\nDebes registrar SALIDA primero."
+                    )
+                    return
+                }
+            }
+
+            // VALIDACIÓN: No permitir SALIDA sin entrada previa
+            if (selectedType == AttendanceType.EXIT) {
+                if (lastRecord == null || lastRecord.type == AttendanceType.EXIT) {
+                    _uiState.value = RecognitionUiState.ValidationError(
+                        employee = employee,
+                        selectedType = selectedType,
+                        lastRecord = lastRecord,
+                        message = "No puedes registrar SALIDA sin ENTRADA previa.\n\nPrimero debes registrar tu ENTRADA."
+                    )
+                    return
+                }
+            }
 
             // Crear registro
             val record = AttendanceRecord(
@@ -181,7 +239,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
                 employeeName = employee.fullName,
                 employeeIdNumber = employee.employeeId,
                 timestamp = System.currentTimeMillis(),
-                type = recordType,
+                type = selectedType,
                 confidence = confidence,
                 livenessScore = 0.9f, // Simplificado por ahora
                 livenessChallenge = _currentChallenge.value?.instruction ?: "none",
@@ -189,13 +247,38 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
             )
 
             // Guardar en base de datos
-            attendanceRepository.insertRecord(record)
+            lastInsertedRecordId = attendanceRepository.insertRecord(record)
 
-            _uiState.value = RecognitionUiState.RecognitionSuccess(employee, recordType, confidence)
+            // Registrar auditoría de creación
+            val metadata = mapOf(
+                "confidence" to confidence,
+                "livenessScore" to 0.9f,
+                "challenge" to (_currentChallenge.value?.instruction ?: "none"),
+                "type" to selectedType.name
+            )
+            auditRepository.insertAudit(
+                AttendanceAudit(
+                    attendanceId = lastInsertedRecordId,
+                    action = AuditAction.CREATED,
+                    employeeIdDetected = employee.employeeId,
+                    employeeIdActual = employee.employeeId,
+                    metadata = gson.toJson(metadata)
+                )
+            )
+
+            _uiState.value = RecognitionUiState.RecognitionSuccess(employee, selectedType, confidence)
 
         } catch (e: Exception) {
             _uiState.value = RecognitionUiState.Error("Error al registrar asistencia: ${e.message}")
         }
+    }
+
+    /**
+     * Formatea un timestamp a formato legible
+     */
+    private fun formatTimestamp(timestamp: Long): String {
+        val sdf = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+        return sdf.format(java.util.Date(timestamp))
     }
 
     /**
@@ -204,6 +287,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     fun reset() {
         livenessVerified = false
         _currentChallenge.value = null
+        _selectedType.value = null
         _uiState.value = RecognitionUiState.Idle
     }
 
@@ -212,6 +296,46 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
      */
     fun stopRecognition() {
         reset()
+    }
+
+    /**
+     * Cancela el último registro de asistencia (cuando el usuario dice "Este no soy yo")
+     */
+    fun cancelLastRegistration() {
+        viewModelScope.launch {
+            try {
+                val recordId = lastInsertedRecordId
+                if (recordId != null) {
+                    // Obtener el registro antes de eliminarlo para auditoría
+                    val record = attendanceRepository.getRecordById(recordId)
+
+                    // Eliminar el registro
+                    attendanceRepository.deleteRecord(recordId)
+
+                    // Registrar auditoría de cancelación
+                    if (record != null) {
+                        val metadata = mapOf(
+                            "original_timestamp" to record.timestamp,
+                            "original_type" to record.type.name,
+                            "confidence" to record.confidence
+                        )
+                        auditRepository.insertAudit(
+                            AttendanceAudit(
+                                attendanceId = null, // Ya fue eliminado
+                                action = AuditAction.CANCELLED_BY_USER,
+                                employeeIdDetected = record.employeeIdNumber,
+                                reason = "Usuario rechazó identificación",
+                                metadata = gson.toJson(metadata)
+                            )
+                        )
+                    }
+
+                    lastInsertedRecordId = null
+                }
+            } catch (e: Exception) {
+                // Error silencioso - el usuario ya rechazó el registro
+            }
+        }
     }
 
     override fun onCleared() {
@@ -226,6 +350,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
  */
 sealed class RecognitionUiState {
     object Idle : RecognitionUiState()
+    data class TypeSelected(val type: AttendanceType) : RecognitionUiState()
     object LivenessChallenge : RecognitionUiState()
     object LivenessVerified : RecognitionUiState()
     object Recognizing : RecognitionUiState()
@@ -236,6 +361,12 @@ sealed class RecognitionUiState {
         val employee: Employee,
         val recordType: AttendanceType,
         val confidence: Float
+    ) : RecognitionUiState()
+    data class ValidationError(
+        val employee: Employee,
+        val selectedType: AttendanceType,
+        val lastRecord: AttendanceRecord?,
+        val message: String
     ) : RecognitionUiState()
     data class Error(val message: String) : RecognitionUiState()
 }

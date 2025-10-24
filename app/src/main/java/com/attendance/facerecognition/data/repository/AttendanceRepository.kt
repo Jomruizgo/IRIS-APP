@@ -73,4 +73,22 @@ class AttendanceRepository(private val attendanceDao: AttendanceDao) {
      */
     suspend fun markAsSynced(recordIds: List<Long>) =
         attendanceDao.markAsSynced(recordIds)
+
+    /**
+     * Eliminar un registro de asistencia (usado cuando el usuario rechaza la identificación)
+     */
+    suspend fun deleteRecord(recordId: Long) =
+        attendanceDao.deleteAttendance(recordId)
+
+    /**
+     * Obtener un registro por ID
+     */
+    suspend fun getRecordById(recordId: Long): AttendanceRecord? =
+        attendanceDao.getAttendanceById(recordId)
+
+    /**
+     * Eliminar registros antiguos (retención de datos)
+     */
+    suspend fun deleteOldRecords(olderThan: Long) =
+        attendanceDao.deleteOldRecords(olderThan)
 }

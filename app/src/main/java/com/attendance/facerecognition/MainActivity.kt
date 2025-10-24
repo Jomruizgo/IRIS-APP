@@ -14,9 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.attendance.facerecognition.ui.screens.HomeScreen
+import com.attendance.facerecognition.ui.screens.DailyReportScreen
+import com.attendance.facerecognition.ui.screens.EmployeeListScreen
 import com.attendance.facerecognition.ui.screens.EmployeeRegistrationScreen
 import com.attendance.facerecognition.ui.screens.FaceRecognitionScreen
+import com.attendance.facerecognition.ui.screens.HomeScreen
 import com.attendance.facerecognition.ui.theme.FaceRecognitionTheme
 
 class MainActivity : ComponentActivity() {
@@ -56,6 +58,12 @@ fun FaceRecognitionApp() {
                     },
                     onNavigateToRecognition = {
                         navController.navigate("recognition")
+                    },
+                    onNavigateToEmployeeList = {
+                        navController.navigate("employee_list")
+                    },
+                    onNavigateToReports = {
+                        navController.navigate("daily_report")
                     }
                 )
             }
@@ -70,6 +78,25 @@ fun FaceRecognitionApp() {
 
             composable("recognition") {
                 FaceRecognitionScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable("employee_list") {
+                EmployeeListScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onEmployeeClick = { employee ->
+                        // TODO: Navegar a detalles del empleado (US-006)
+                    }
+                )
+            }
+
+            composable("daily_report") {
+                DailyReportScreen(
                     onNavigateBack = {
                         navController.popBackStack()
                     }

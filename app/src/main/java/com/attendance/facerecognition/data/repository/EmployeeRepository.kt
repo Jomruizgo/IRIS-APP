@@ -43,6 +43,14 @@ class EmployeeRepository(private val employeeDao: EmployeeDao) {
     suspend fun deleteEmployee(employee: Employee) = employeeDao.deleteEmployee(employee)
 
     /**
+     * Eliminar empleado por ID
+     */
+    suspend fun deleteEmployee(employeeId: Long) {
+        val employee = getEmployeeById(employeeId)
+        employee?.let { deleteEmployee(it) }
+    }
+
+    /**
      * Verificar si existe un empleado con el employeeId
      */
     suspend fun employeeExists(employeeId: String): Boolean =
@@ -53,4 +61,10 @@ class EmployeeRepository(private val employeeDao: EmployeeDao) {
      */
     suspend fun getAllEmployeesWithEmbeddings(): List<Employee> =
         employeeDao.getAllActiveEmployeesOnce()
+
+    /**
+     * Buscar empleados por nombre o ID
+     */
+    fun searchEmployees(query: String): Flow<List<Employee>> =
+        employeeDao.searchEmployees("%$query%")
 }

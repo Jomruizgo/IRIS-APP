@@ -73,3 +73,18 @@ class FloatListConverter {
         return listOfLists.map { it.toFloatArray() }
     }
 }
+
+/**
+ * Type Converter para AuditAction enum
+ */
+class AuditActionConverter {
+    @TypeConverter
+    fun fromAuditAction(value: AuditAction): String {
+        return value.name
+    }
+
+    @TypeConverter
+    fun toAuditAction(value: String): AuditAction {
+        return AuditAction.valueOf(value)
+    }
+}

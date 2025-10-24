@@ -308,21 +308,144 @@
 
 ---
 
-#### US-016 [Media] - Prevenir Duplicados
-**Como** sistema
-**Debo** detectar entradas/salidas duplicadas
-**Para** evitar registros erróneos
+#### US-016 [DEPRECADA] - Prevenir Duplicados
+⚠️ **NOTA**: Esta historia fue reemplazada por US-039 (Selección Manual de ENTRADA/SALIDA) que incluye validación de duplicados más robusta.
+
+---
+
+#### US-038 [Alta] - Corrección Inmediata de Identificación Errónea
+**Como** empleado
+**Quiero** poder rechazar una identificación incorrecta inmediatamente
+**Para** evitar registros falsos en mi asistencia
 
 **Criterios de Aceptación**:
-- [ ] No permitir ENTRADA si ya hay entrada sin salida
-- [ ] No permitir SALIDA si no hay entrada previa
-- [ ] Mostrar mensaje: "Ya registraste entrada a las 8:05 AM"
-- [ ] Opción de "Forzar registro" solo para ADMIN
-- [ ] Log de registros forzados
+- [ ] Diálogo de éxito muestra botón "Este no soy yo" además de "Correcto"
+- [ ] Al presionar "Este no soy yo", se cancela el registro antes de guardarlo
+- [ ] Se registra en tabla de auditoría la cancelación
+- [ ] Usuario vuelve automáticamente a pantalla de reconocimiento
+- [ ] Sistema permite re-intentar reconocimiento inmediatamente
+- [ ] No se guarda nada en `attendance_records` si fue cancelado
+- [ ] Log incluye: timestamp, empleado detectado, confianza
 
 **Estimación**: S (1-3 días)
-**Prioridad**: Media
+**Prioridad**: Alta
 **Sprint**: 3
+**Estado**: ⏳ Pendiente
+
+---
+
+#### US-039 [Alta] - Selección Manual de ENTRADA/SALIDA
+**Como** empleado
+**Quiero** seleccionar manualmente si estoy marcando ENTRADA o SALIDA
+**Para** tener control sobre mi registro de asistencia
+
+**Criterios de Aceptación**:
+- [ ] Pantalla inicial de reconocimiento muestra dos botones grandes: ENTRADA 🏢 y SALIDA 🏠
+- [ ] Sistema consulta y muestra último registro del usuario para contexto
+- [ ] **Validación ENTRADA**: No permitir si ya hay entrada sin salida correspondiente
+  - Mensaje: "Ya tienes ENTRADA sin SALIDA (Hoy 8:00 AM). Debes marcar SALIDA primero."
+  - Botón ENTRADA deshabilitado visualmente
+- [ ] **Validación SALIDA**: No permitir si no hay entrada previa o última fue salida
+  - Mensaje: "No puedes marcar SALIDA sin ENTRADA previa"
+  - Botón SALIDA deshabilitado visualmente
+- [ ] Una vez seleccionado tipo válido, proceder a escaneo facial
+- [ ] Guardar tipo seleccionado en `AttendanceRecord.type`
+
+**Estimación**: M (3-5 días)
+**Prioridad**: Alta
+**Sprint**: 3
+**Estado**: ⏳ Pendiente
+
+---
+
+#### US-040 [Media] - Panel de Admin para Corregir Registros
+**Como** administrador
+**Quiero** ver y corregir registros recientes de asistencia
+**Para** solucionar errores de identificación no detectados inmediatamente
+
+**Criterios de Aceptación**:
+- [ ] Nueva pantalla "Registros Recientes" accesible desde HomeScreen
+- [ ] Lista muestra últimos 50 registros ordenados por fecha desc
+- [ ] Cada item muestra: Empleado, Tipo (ENTRADA/SALIDA), Hora, Confianza, Método biométrico
+- [ ] Filtros:
+  - Por fecha (DatePicker)
+  - Por empleado (Selector)
+  - "Última hora" (toggle rápido)
+- [ ] Botón "Eliminar" en cada registro (icono 🗑️)
+- [ ] Dialog de confirmación:
+  - "¿Eliminar registro de Juan López - ENTRADA 8:05 AM?"
+  - Campo obligatorio: "Razón de eliminación: ___________"
+  - Botones: "Cancelar" / "Sí, eliminar"
+- [ ] Al eliminar:
+  - Marca registro como `deleted=true` (soft delete)
+  - Crea entry en `attendance_audit`
+  - Toast: "Registro eliminado"
+- [ ] Solo accesible para rol ADMIN
+
+**Estimación**: M (3-5 días)
+**Prioridad**: Media
+**Sprint**: 5
+**Estado**: ⏳ Pendiente
+
+---
+
+#### US-041 [Media] - Sistema de Auditoría
+**Como** administrador
+**Quiero** ver historial de correcciones y acciones administrativas
+**Para** auditoría y control de calidad del sistema
+
+**Criterios de Aceptación**:
+- [ ] Nueva tabla `attendance_audit` en base de datos:
+  ```sql
+  CREATE TABLE attendance_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      attendance_id INTEGER,
+      action TEXT NOT NULL,  -- CREATED, CANCELLED_BY_USER, DELETED_BY_ADMIN, FORCED_BY_ADMIN
+      employee_id_detected TEXT,
+      employee_id_actual TEXT,
+      performed_by_user_id INTEGER,
+      reason TEXT,
+      metadata TEXT,  -- JSON
+      timestamp INTEGER NOT NULL
+  )
+  ```
+- [ ] Pantalla "Auditoría" accesible solo para ADMIN
+- [ ] Lista de todos los eventos de auditoría
+- [ ] Filtros: Por empleado, Por acción, Por rango de fechas
+- [ ] Cada item muestra: Acción, Empleado, Usuario que realizó acción, Razón, Fecha
+- [ ] Botón "Exportar a CSV"
+- [ ] Configuración de retención: "Mantener logs de auditoría por X días" (default 180)
+- [ ] Job automático para limpiar logs antiguos
+
+**Estimación**: M (3-5 días)
+**Prioridad**: Media
+**Sprint**: 5
+**Estado**: ⏳ Pendiente
+
+---
+
+#### US-042 [Baja] - Forzar Registro (Solo ADMIN)
+**Como** administrador
+**Quiero** forzar un registro aunque viole las reglas de validación
+**Para** corregir situaciones especiales o errores del usuario
+
+**Criterios de Aceptación**:
+- [ ] Si usuario autenticado es ADMIN, mostrar opción especial en validación
+- [ ] Cuando validación detecta entrada duplicada:
+  - Usuario normal: Solo mensaje de error
+  - ADMIN: Mensaje + botón "Forzar de todos modos"
+- [ ] Al presionar "Forzar de todos modos":
+  - Dialog: "⚠️ Advertencia: Forzar ENTRADA con entrada previa sin salida"
+  - Campo obligatorio: "Razón: ___________" (min 10 caracteres)
+  - Botones: "Cancelar" / "Sí, forzar"
+- [ ] Registro guardado con flag `forced=true`
+- [ ] Entry en auditoría con action=FORCED_BY_ADMIN
+- [ ] Metadata incluye: previous_entry_id, violation_type
+- [ ] Solo permitir forzar ENTRADA duplicada (NO salida sin entrada)
+
+**Estimación**: S (1-3 días)
+**Prioridad**: Baja
+**Sprint**: 6
 **Estado**: ⏳ Pendiente
 
 ---
@@ -770,17 +893,24 @@
 
 ---
 
-### **SPRINT 3: Reportes Básicos** (2 semanas)
-**Objetivo**: Visibilidad de asistencias
+### **SPRINT 3: Control de Errores + Reportes Básicos** (2 semanas)
+**Objetivo**: Permitir corrección de errores de identificación y visibilidad de asistencias
 
+**🔥 Crítico** (Nuevas funcionalidades para manejo de errores):
+- [ ] US-039: Selección manual de ENTRADA/SALIDA con validación
+- [ ] US-038: Botón "Este no soy yo" para rechazar identificación errónea
+- [ ] US-041: Crear tabla `attendance_audit` en DB
+
+**📊 Reportes**:
 - [ ] US-019: Reporte diario
 - [ ] US-020: Historial por empleado
-- [ ] US-021: Retención configurable de datos
 - [ ] US-015: Dashboard en tiempo real
-- [ ] US-016: Validación de duplicados
 - [ ] US-018: Registrar método biométrico usado
 
-**Entregables**: Pantallas de reportes operativas
+**Entregables**:
+- Sistema de corrección de errores funcional
+- Pantallas de reportes básicas operativas
+- Auditoría implementada
 
 ---
 

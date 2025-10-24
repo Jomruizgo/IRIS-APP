@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -103,7 +104,8 @@ fun FaceRecognitionScreen(
                             cameraPermissionState.launchPermissionRequest()
                         }
                     },
-                    onNavigateBack = onNavigateBack
+                    onNavigateBack = onNavigateBack,
+                    viewModel = viewModel
                 )
             }
         }
@@ -128,7 +130,18 @@ fun FaceRecognitionScreen(
                         viewModel.reset()
                     }
                 ) {
-                    Text("Aceptar")
+                    Text("✓ Correcto")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSuccessDialog = false
+                        viewModel.cancelLastRegistration()
+                        viewModel.reset()
+                    }
+                ) {
+                    Text("✗ Este no soy yo")
                 }
             }
         )
@@ -173,13 +186,52 @@ fun FaceRecognitionScreen(
             }
         )
     }
+
+    // Diálogo de error de validación
+    if (uiState is RecognitionUiState.ValidationError) {
+        val validationState = uiState as RecognitionUiState.ValidationError
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.reset()
+                isScanning = false
+            },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+            title = { Text("Validación de Registro") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Empleado: ${validationState.employee.fullName}",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = validationState.message,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.reset()
+                    isScanning = false
+                }) {
+                    Text("Entendido")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun IdleScreen(
     onStartScan: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: FaceRecognitionViewModel
 ) {
+    val selectedType by viewModel.selectedType.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -211,14 +263,14 @@ private fun IdleScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Sistema de Reconocimiento Facial",
+                    text = "Registrar Asistencia",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Presiona 'Iniciar' para registrar tu asistencia",
+                    text = "Selecciona el tipo de registro",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center
@@ -226,7 +278,7 @@ private fun IdleScreen(
             }
         }
 
-        // Información
+        // Selección de tipo
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -235,36 +287,104 @@ private fun IdleScreen(
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Instrucciones",
-                    style = MaterialTheme.typography.titleSmall,
+                    text = "¿Qué deseas registrar?",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Text(
-                    text = "• Posiciónate frente a la cámara",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "• Asegúrate de tener buena iluminación",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "• Sigue las instrucciones en pantalla",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "• Completa el desafío de verificación",
-                    style = MaterialTheme.typography.bodySmall
-                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Botón ENTRADA
+                    OutlinedButton(
+                        onClick = { viewModel.selectAttendanceType(AttendanceType.ENTRY) },
+                        modifier = Modifier.weight(1f).height(100.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (selectedType == AttendanceType.ENTRY)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surface
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = 2.dp,
+                            color = if (selectedType == AttendanceType.ENTRY)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.outline
+                        )
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "🏢",
+                                style = MaterialTheme.typography.headlineLarge
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "ENTRADA",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+
+                    // Botón SALIDA
+                    OutlinedButton(
+                        onClick = { viewModel.selectAttendanceType(AttendanceType.EXIT) },
+                        modifier = Modifier.weight(1f).height(100.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (selectedType == AttendanceType.EXIT)
+                                MaterialTheme.colorScheme.secondaryContainer
+                            else
+                                MaterialTheme.colorScheme.surface
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = 2.dp,
+                            color = if (selectedType == AttendanceType.EXIT)
+                                MaterialTheme.colorScheme.secondary
+                            else
+                                MaterialTheme.colorScheme.outline
+                        )
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "🏠",
+                                style = MaterialTheme.typography.headlineLarge
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "SALIDA",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+                }
+
+                if (selectedType != null) {
+                    Text(
+                        text = "✓ Seleccionado: ${if (selectedType == AttendanceType.ENTRY) "ENTRADA" else "SALIDA"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
 
-        // Botones
+        // Botones de acción
         Button(
             onClick = onStartScan,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedType != null
         ) {
             Icon(Icons.Filled.Face, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))

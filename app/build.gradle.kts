@@ -98,6 +98,12 @@ dependencies {
     // WorkManager for sync
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
+    // Biometric Authentication
+    implementation("androidx.biometric:biometric:1.1.0")
+
+    // DataStore for preferences
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 

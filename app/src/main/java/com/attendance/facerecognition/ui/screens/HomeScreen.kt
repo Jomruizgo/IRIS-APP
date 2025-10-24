@@ -2,9 +2,10 @@ package com.attendance.facerecognition.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,7 +17,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun HomeScreen(
     onNavigateToRegistration: () -> Unit,
-    onNavigateToRecognition: () -> Unit
+    onNavigateToRecognition: () -> Unit,
+    onNavigateToEmployeeList: () -> Unit = {},
+    onNavigateToReports: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -84,37 +87,72 @@ fun HomeScreen(
                 }
             }
 
-            // Botón Registrar Empleado
-            OutlinedCard(
-                onClick = onNavigateToRegistration,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(
+                // Botón Registrar Empleado
+                OutlinedCard(
+                    onClick = onNavigateToRegistration,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .weight(1f)
+                        .height(100.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.PersonAdd,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.secondary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Registrar Empleado",
-                        style = MaterialTheme.typography.titleSmall
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PersonAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Registrar",
+                            style = MaterialTheme.typography.titleSmall,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                // Botón Ver Empleados
+                OutlinedCard(
+                    onClick = onNavigateToEmployeeList,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(100.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.People,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Ver Lista",
+                            style = MaterialTheme.typography.titleSmall,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
 
-            // Botón Reportes (placeholder para futuro)
+            // Botón Reportes
             OutlinedCard(
-                onClick = { /* TODO: Implementar reportes */ },
+                onClick = onNavigateToReports,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(100.dp)

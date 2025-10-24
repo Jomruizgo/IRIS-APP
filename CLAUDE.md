@@ -243,7 +243,7 @@ com.attendance.facerecognition/
 Toda la documentación del proyecto se encuentra organizada en la carpeta `docs/` con numeración secuencial:
 
 - `docs/01-BACKLOG.md` - Historias de usuario, épicas y planificación de sprints
-- `docs/02-*.md` - Futuros documentos (arquitectura, API, etc.)
+- `docs/02-DECISION-CONGRUENCIA-BIOMETRIA.md` - Decisión arquitectónica sobre liveness detection
 
 Los archivos que permanecen en la raíz:
 - `CLAUDE.md` - Este archivo (orientación para Claude Code)
@@ -251,6 +251,12 @@ Los archivos que permanecen en la raíz:
 - `.gitignore` - Archivos ignorados por Git
 
 **Convención de nombres**: `docs/NN-NOMBRE.md` donde NN es el número secuencial de creación (01, 02, 03...).
+
+### Decisiones Arquitectónicas Importantes
+
+1. **Congruencia Biométrica** (`docs/02-*`): Solo pedimos poses en liveness que capturamos en registro
+   - Desafíos permitidos: BLINK, TURN_LEFT, TURN_RIGHT
+   - Desafíos eliminados: SMILE, LOOK_UP (no tenemos fotos de entrenamiento)
 
 ## Notas de Desarrollo
 

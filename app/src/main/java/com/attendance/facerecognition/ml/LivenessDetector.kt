@@ -11,13 +11,24 @@ class LivenessDetector {
 
     /**
      * Tipos de desafíos que se le pueden pedir al usuario
+     * IMPORTANTE: Solo usar desafíos que tengan fotos correspondientes en el registro
+     *
+     * Registro captura:
+     * - Fotos de FRENTE (3 fotos)
+     * - Fotos GIRADAS A LA IZQUIERDA (3 fotos)
+     * - Fotos GIRADAS A LA DERECHA (3 fotos)
+     * - Foto de FRENTE final (1 foto)
+     *
+     * Por lo tanto, solo usamos desafíos congruentes con lo registrado.
      */
     enum class ChallengeType {
-        BLINK,          // Parpadear
-        SMILE,          // Sonreír
-        TURN_LEFT,      // Girar cabeza a la izquierda
-        TURN_RIGHT,     // Girar cabeza a la derecha
-        LOOK_UP         // Mirar hacia arriba
+        BLINK,          // Parpadear - No afecta embedding, solo anti-spoofing
+        TURN_LEFT,      // Girar cabeza a la izquierda - ✅ Tenemos fotos
+        TURN_RIGHT      // Girar cabeza a la derecha - ✅ Tenemos fotos
+
+        // DESHABILITADOS (no tenemos fotos de entrenamiento):
+        // SMILE - No capturamos fotos sonriendo
+        // LOOK_UP - No capturamos fotos mirando arriba
     }
 
     /**
@@ -52,10 +63,8 @@ class LivenessDetector {
     fun getChallengeText(challenge: ChallengeType): String {
         return when (challenge) {
             ChallengeType.BLINK -> "Parpadea 2 veces"
-            ChallengeType.SMILE -> "Sonríe"
-            ChallengeType.TURN_LEFT -> "Gira la cabeza a la izquierda"
-            ChallengeType.TURN_RIGHT -> "Gira la cabeza a la derecha"
-            ChallengeType.LOOK_UP -> "Mira hacia arriba"
+            ChallengeType.TURN_LEFT -> "Gira la cabeza a la IZQUIERDA"
+            ChallengeType.TURN_RIGHT -> "Gira la cabeza a la DERECHA"
         }
     }
 
@@ -68,10 +77,8 @@ class LivenessDetector {
     ): Boolean {
         return when (challenge.type) {
             ChallengeType.BLINK -> face.areEyesClosed(threshold = 0.3f)
-            ChallengeType.SMILE -> face.isSmiling(threshold = 0.6f)
             ChallengeType.TURN_LEFT -> face.isHeadTurnedLeft(threshold = 25f)
             ChallengeType.TURN_RIGHT -> face.isHeadTurnedRight(threshold = 25f)
-            ChallengeType.LOOK_UP -> face.headEulerAngleX < -15f
         }
     }
 
@@ -115,10 +122,8 @@ class LivenessDetector {
 
         return when (challenge) {
             ChallengeType.BLINK -> verifyBlink(face)
-            ChallengeType.SMILE -> verifySmile(face)
             ChallengeType.TURN_LEFT -> verifyTurnLeft(face)
             ChallengeType.TURN_RIGHT -> verifyTurnRight(face)
-            ChallengeType.LOOK_UP -> verifyLookUp(face)
         }
     }
 
@@ -138,15 +143,6 @@ class LivenessDetector {
         }
     }
 
-    private fun verifySmile(face: DetectedFace): ChallengeVerificationResult {
-        val isSmiling = face.isSmiling(threshold = 0.6f)
-        return ChallengeVerificationResult(
-            verified = isSmiling,
-            confidence = face.smilingProbability ?: 0f,
-            message = if (isSmiling) "Sonrisa detectada" else "Esperando sonrisa..."
-        )
-    }
-
     private fun verifyTurnLeft(face: DetectedFace): ChallengeVerificationResult {
         val isTurnedLeft = face.isHeadTurnedLeft(threshold = 25f)
         val angle = kotlin.math.abs(face.headEulerAngleY)
@@ -164,17 +160,6 @@ class LivenessDetector {
             verified = isTurnedRight,
             confidence = if (isTurnedRight) (angle / 90f).coerceAtMost(1f) else 0f,
             message = if (isTurnedRight) "Giro derecha detectado" else "Gira más a la derecha..."
-        )
-    }
-
-    private fun verifyLookUp(face: DetectedFace): ChallengeVerificationResult {
-        // Ángulo negativo = mirando arriba
-        val isLookingUp = face.headEulerAngleX < -15f
-        val angle = kotlin.math.abs(face.headEulerAngleX)
-        return ChallengeVerificationResult(
-            verified = isLookingUp,
-            confidence = if (isLookingUp) (angle / 90f).coerceAtMost(1f) else 0f,
-            message = if (isLookingUp) "Mirando arriba detectado" else "Mira más hacia arriba..."
         )
     }
 
