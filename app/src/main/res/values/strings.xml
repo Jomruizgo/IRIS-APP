@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Control de Asistencia</string>
+    <string name="camera_permission_required">Se requiere permiso de cámara</string>
+    <string name="grant_permission">Otorgar permiso</string>
+    <string name="employee_registered">Empleado registrado exitosamente</string>
+    <string name="attendance_recorded">Asistencia registrada</string>
+    <string name="face_not_recognized">Rostro no reconocido</string>
+    <string name="liveness_check_failed">Verificación de vida fallida</string>
+</resources>
