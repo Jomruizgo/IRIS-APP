@@ -76,7 +76,17 @@ data class AttendanceAudit(
     /**
      * Timestamp de cuándo se realizó la acción
      */
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+
+    /**
+     * Indica si este registro de auditoría ya fue sincronizado con el servidor
+     */
+    val isSynced: Boolean = false,
+
+    /**
+     * Timestamp de cuándo fue sincronizado (NULL si aún no se sincronizó)
+     */
+    val syncedAt: Long? = null
 )
 
 /**

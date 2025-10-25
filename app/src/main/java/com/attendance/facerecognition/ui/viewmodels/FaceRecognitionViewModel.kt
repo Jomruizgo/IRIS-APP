@@ -100,6 +100,15 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     fun processFrame(frame: Bitmap) {
         if (isProcessingFrame) return
 
+        // No procesar frames si hay un error o validación pendiente
+        val currentState = _uiState.value
+        if (currentState is RecognitionUiState.Error ||
+            currentState is RecognitionUiState.ValidationError ||
+            currentState is RecognitionUiState.NotRecognized ||
+            currentState is RecognitionUiState.RecognitionSuccess) {
+            return
+        }
+
         viewModelScope.launch {
             try {
                 isProcessingFrame = true

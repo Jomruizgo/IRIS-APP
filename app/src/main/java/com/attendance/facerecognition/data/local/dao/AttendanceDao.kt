@@ -65,6 +65,12 @@ interface AttendanceDao {
     @Query("DELETE FROM attendance_records WHERE timestamp < :olderThan")
     suspend fun deleteOldRecords(olderThan: Long)
 
+    @Query("SELECT COUNT(*) FROM attendance_records WHERE timestamp < :olderThan AND isSynced = 1")
+    suspend fun countOldSyncedRecords(olderThan: Long): Int
+
+    @Query("DELETE FROM attendance_records WHERE timestamp < :olderThan AND isSynced = 1")
+    suspend fun deleteOldSyncedRecords(olderThan: Long)
+
     @Query("DELETE FROM attendance_records")
     suspend fun deleteAllRecords()
 }

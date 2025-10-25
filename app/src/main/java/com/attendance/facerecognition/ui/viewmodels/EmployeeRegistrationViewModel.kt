@@ -4,6 +4,8 @@ import android.app.Application
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.fragment.app.FragmentActivity
+import com.attendance.facerecognition.biometric.BiometricKeyManager
 import com.attendance.facerecognition.data.local.database.AppDatabase
 import com.attendance.facerecognition.data.local.entities.Employee
 import com.attendance.facerecognition.data.repository.EmployeeRepository
@@ -20,6 +22,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
     private val repository = EmployeeRepository(database.employeeDao())
     private val faceDetector = FaceDetector()
     private val faceRecognizer = FaceRecognizer(application)
+    private val biometricKeyManager = BiometricKeyManager(application)
 
     private val _uiState = MutableStateFlow<RegistrationUiState>(RegistrationUiState.Idle)
     val uiState: StateFlow<RegistrationUiState> = _uiState.asStateFlow()
@@ -30,11 +33,15 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
     private val _photoCount = MutableStateFlow(0)
     val photoCount: StateFlow<Int> = _photoCount.asStateFlow()
 
+    private val _registeredEmployeeData = MutableStateFlow<Pair<String, String>?>(null) // (employeeId, employeeName)
+    val registeredEmployeeData: StateFlow<Pair<String, String>?> = _registeredEmployeeData.asStateFlow()
+
     private val targetPhotoCount = 10
     private val minPhotoCount = 7
 
     private var isProcessing = false
     private var lastCaptureTime = 0L
+    private var currentRegisteredEmployeeId: Long? = null
 
     /**
      * Procesa un frame de la cámara para detectar y capturar rostro
@@ -50,6 +57,13 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
 
         // Evitar procesar múltiples frames simultáneamente
         if (isProcessing) {
+            return
+        }
+
+        // No procesar frames si hay un error o éxito pendiente
+        val currentState = _uiState.value
+        if (currentState is RegistrationUiState.Error ||
+            currentState is RegistrationUiState.RegistrationSuccess) {
             return
         }
 
@@ -128,16 +142,25 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
     }
 
     /**
-     * Registra el empleado con las fotos capturadas
+     * Registra el empleado con las fotos capturadas (opcional) y/o huella (opcional)
+     * IMPORTANTE: Al menos uno de los dos métodos debe estar habilitado
      */
     fun registerEmployee(
         name: String,
         employeeId: String,
         department: String,
-        position: String
+        position: String,
+        hasFingerprintEnabled: Boolean = false
     ) {
-        if (_capturedPhotos.value.size < minPhotoCount) {
-            _uiState.value = RegistrationUiState.Error("Necesitas al menos $minPhotoCount fotos")
+        val hasPhotos = _capturedPhotos.value.size >= minPhotoCount
+
+        // Validar que haya al menos UN método biométrico
+        if (!hasPhotos && !hasFingerprintEnabled) {
+            _uiState.value = RegistrationUiState.Error(
+                "Debe registrar al menos un método de autenticación:\n" +
+                "• Captura facial (7-10 fotos), o\n" +
+                "• Huella dactilar"
+            )
             return
         }
 
@@ -147,7 +170,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                     _uiState.value = RegistrationUiState.RegisteringEmployee
                 }
 
-                android.util.Log.d("EmployeeRegistration", "Starting registration for: $name")
+                android.util.Log.d("EmployeeRegistration", "Starting registration for: $name (hasPhotos=$hasPhotos, hasFingerprint=$hasFingerprintEnabled)")
 
                 // Verificar si el empleado ya existe
                 android.util.Log.d("EmployeeRegistration", "Checking if employee $employeeId already exists...")
@@ -160,22 +183,29 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                 }
 
                 android.util.Log.d("EmployeeRegistration", "Employee does not exist, proceeding with registration")
-                android.util.Log.d("EmployeeRegistration", "Generating embeddings for ${_capturedPhotos.value.size} photos")
 
-                // Generar embeddings para todas las fotos
-                val embeddings = _capturedPhotos.value.mapIndexed { index, photo ->
-                    android.util.Log.d("EmployeeRegistration", "Processing photo $index: ${photo.width}x${photo.height}")
-                    try {
-                        val embedding = faceRecognizer.generateEmbedding(photo)
-                        android.util.Log.d("EmployeeRegistration", "Embedding $index generated: ${embedding.size} dimensions")
-                        embedding
-                    } catch (e: Exception) {
-                        android.util.Log.e("EmployeeRegistration", "Error generating embedding $index", e)
-                        throw e
+                // Generar embeddings solo si hay fotos
+                val embeddings = if (hasPhotos) {
+                    android.util.Log.d("EmployeeRegistration", "Generating embeddings for ${_capturedPhotos.value.size} photos")
+                    _capturedPhotos.value.mapIndexed { index, photo ->
+                        android.util.Log.d("EmployeeRegistration", "Processing photo $index: ${photo.width}x${photo.height}")
+                        try {
+                            val embedding = faceRecognizer.generateEmbedding(photo)
+                            android.util.Log.d("EmployeeRegistration", "Embedding $index generated: ${embedding.size} dimensions")
+                            embedding
+                        } catch (e: Exception) {
+                            android.util.Log.e("EmployeeRegistration", "Error generating embedding $index", e)
+                            throw e
+                        }
                     }
+                } else {
+                    android.util.Log.d("EmployeeRegistration", "No photos captured, skipping embedding generation")
+                    emptyList()
                 }
 
-                android.util.Log.d("EmployeeRegistration", "All embeddings generated successfully")
+                if (hasPhotos) {
+                    android.util.Log.d("EmployeeRegistration", "All embeddings generated successfully")
+                }
 
                 // Crear empleado
                 val employee = Employee(
@@ -183,7 +213,8 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                     fullName = name,
                     department = department,
                     position = position,
-                    faceEmbeddings = embeddings
+                    faceEmbeddings = embeddings,
+                    hasFingerprintEnabled = hasFingerprintEnabled
                 )
 
                 android.util.Log.d("EmployeeRegistration", "Saving employee to database")
@@ -192,6 +223,9 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                 val id = repository.insertEmployee(employee)
 
                 android.util.Log.d("EmployeeRegistration", "Employee saved with ID: $id")
+
+                currentRegisteredEmployeeId = id
+                _registeredEmployeeData.value = Pair(employeeId, name)
 
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     _uiState.value = RegistrationUiState.RegistrationSuccess(employee)
@@ -261,6 +295,65 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
             }
             else -> false
         }
+    }
+
+    /**
+     * Registra la huella dactilar del empleado recién creado
+     * Vincula la huella específica del empleado con una clave criptográfica única
+     */
+    fun enrollFingerprint(
+        activity: FragmentActivity,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val employeeId = _registeredEmployeeData.value?.first
+        val dbId = currentRegisteredEmployeeId
+
+        if (employeeId == null || dbId == null) {
+            onError("No hay empleado registrado recientemente")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                biometricKeyManager.enrollFingerprint(
+                    employeeId = employeeId,
+                    activity = activity,
+                    onSuccess = { keystoreAlias ->
+                        // Actualizar empleado con el alias de la clave
+                        viewModelScope.launch {
+                            try {
+                                val employee = repository.getEmployeeById(dbId)
+                                if (employee != null) {
+                                    val updatedEmployee = employee.copy(
+                                        fingerprintKeystoreAlias = keystoreAlias
+                                    )
+                                    repository.updateEmployee(updatedEmployee)
+                                    onSuccess()
+                                } else {
+                                    onError("No se encontró el empleado")
+                                }
+                            } catch (e: Exception) {
+                                onError("Error al actualizar empleado: ${e.message}")
+                            }
+                        }
+                    },
+                    onError = { errorMessage ->
+                        onError(errorMessage)
+                    }
+                )
+            } catch (e: Exception) {
+                onError("Error al registrar huella: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Limpia los datos del empleado registrado
+     */
+    fun clearRegisteredEmployeeData() {
+        _registeredEmployeeData.value = null
+        currentRegisteredEmployeeId = null
     }
 
     override fun onCleared() {

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,9 +37,15 @@ fun EmployeeRegistrationScreen(
     var employeeId by remember { mutableStateOf("") }
     var department by remember { mutableStateOf("") }
     var position by remember { mutableStateOf("") }
+    var enableFingerprint by remember { mutableStateOf(false) }
 
     var showCamera by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
+    var showFingerprintEnrollment by remember { mutableStateOf(false) }
+    var showFingerprintSuccessDialog by remember { mutableStateOf(false) }
+    var fingerprintEnrollmentError by remember { mutableStateOf<String?>(null) }
+
+    val registeredEmployeeData by viewModel.registeredEmployeeData.collectAsState()
 
     // Permiso de cámara
     val cameraPermissionState = rememberPermissionState(
@@ -46,38 +53,68 @@ fun EmployeeRegistrationScreen(
     )
 
     // Manejar resultado exitoso
-    LaunchedEffect(uiState) {
-        when (uiState) {
+    LaunchedEffect(uiState, registeredEmployeeData) {
+        when (val state = uiState) {
             is RegistrationUiState.RegistrationSuccess -> {
-                showSuccessDialog = true
+                val empData = registeredEmployeeData
+                if (state.employee.hasFingerprintEnabled && empData != null) {
+                    // Mostrar pantalla de registro de huella
+                    showFingerprintEnrollment = true
+                } else {
+                    // Mostrar diálogo de éxito directo
+                    showSuccessDialog = true
+                }
             }
             else -> {}
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Registrar Empleado") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+    // Mostrar pantalla de registro de huella si corresponde
+    if (showFingerprintEnrollment && registeredEmployeeData != null) {
+        FingerprintEnrollmentScreen(
+            employeeName = registeredEmployeeData!!.second,
+            employeeId = registeredEmployeeData!!.first,
+            onEnroll = { activity ->
+                viewModel.enrollFingerprint(
+                    activity = activity,
+                    onSuccess = {
+                        showFingerprintEnrollment = false
+                        showFingerprintSuccessDialog = true
+                    },
+                    onError = { error ->
+                        fingerprintEnrollmentError = error
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (showCamera && cameraPermissionState.status.isGranted) {
+            },
+            onSkip = {
+                showFingerprintEnrollment = false
+                showSuccessDialog = true
+            }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Registrar Empleado") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                if (showCamera && cameraPermissionState.status.isGranted) {
                 // Modo cámara
                 CameraScreen(
                     viewModel = viewModel,
@@ -92,7 +129,8 @@ fun EmployeeRegistrationScreen(
                             name = employeeName,
                             employeeId = employeeId,
                             department = department,
-                            position = position
+                            position = position,
+                            hasFingerprintEnabled = enableFingerprint
                         )
                     }
                 )
@@ -107,6 +145,8 @@ fun EmployeeRegistrationScreen(
                     onDepartmentChange = { department = it },
                     position = position,
                     onPositionChange = { position = it },
+                    enableFingerprint = enableFingerprint,
+                    onEnableFingerprintChange = { enableFingerprint = it },
                     photoCount = photoCount,
                     onStartCapture = {
                         if (cameraPermissionState.status.isGranted) {
@@ -117,7 +157,17 @@ fun EmployeeRegistrationScreen(
                         }
                     },
                     onCancel = onNavigateBack,
-                    canStartCapture = employeeName.isNotBlank() && employeeId.isNotBlank()
+                    canStartCapture = employeeName.isNotBlank() && employeeId.isNotBlank(),
+                    onRegisterDirectly = {
+                        // Registrar directamente sin fotos (solo con huella)
+                        viewModel.registerEmployee(
+                            name = employeeName,
+                            employeeId = employeeId,
+                            department = department,
+                            position = position,
+                            hasFingerprintEnabled = enableFingerprint
+                        )
+                    }
                 )
             }
 
@@ -159,6 +209,7 @@ fun EmployeeRegistrationScreen(
                 Button(
                     onClick = {
                         showSuccessDialog = false
+                        viewModel.clearRegisteredEmployeeData()
                         onNavigateBack()
                     }
                 ) {
@@ -168,22 +219,49 @@ fun EmployeeRegistrationScreen(
         )
     }
 
-    // Diálogo de error
-    if (uiState is RegistrationUiState.Error) {
-        val errorMessage = (uiState as RegistrationUiState.Error).message
-        AlertDialog(
-            onDismissRequest = { viewModel.resetCapture() },
-            icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) },
-            title = { Text("Error") },
-            text = { Text(errorMessage) },
-            confirmButton = {
-                Button(onClick = { viewModel.resetCapture() }) {
-                    Text("Aceptar")
-                }
+            // Diálogo de error
+            if (uiState is RegistrationUiState.Error) {
+                val errorMessage = (uiState as RegistrationUiState.Error).message
+                AlertDialog(
+                    onDismissRequest = { viewModel.resetCapture() },
+                    icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) },
+                    title = { Text("Error") },
+                    text = { Text(errorMessage) },
+                    confirmButton = {
+                        Button(onClick = { viewModel.resetCapture() }) {
+                            Text("Aceptar")
+                        }
+                    }
+                )
             }
-        )
+        }
+
+        // Diálogo de éxito de registro de huella
+        if (showFingerprintSuccessDialog) {
+            FingerprintEnrollmentSuccessDialog(
+                onDismiss = {
+                    showFingerprintSuccessDialog = false
+                    viewModel.clearRegisteredEmployeeData()
+                    onNavigateBack()
+                }
+            )
+        }
+
+        // Diálogo de error de registro de huella
+        fingerprintEnrollmentError?.let { error ->
+            FingerprintEnrollmentErrorDialog(
+                errorMessage = error,
+                onDismiss = {
+                    fingerprintEnrollmentError = null
+                    showFingerprintEnrollment = false
+                    showSuccessDialog = true
+                },
+                onRetry = {
+                    fingerprintEnrollmentError = null
+                }
+            )
+        }
     }
-}
 
 @Composable
 private fun FormScreen(
@@ -195,10 +273,13 @@ private fun FormScreen(
     onDepartmentChange: (String) -> Unit,
     position: String,
     onPositionChange: (String) -> Unit,
+    enableFingerprint: Boolean,
+    onEnableFingerprintChange: (Boolean) -> Unit,
     photoCount: Int,
     onStartCapture: () -> Unit,
     onCancel: () -> Unit,
-    canStartCapture: Boolean
+    canStartCapture: Boolean,
+    onRegisterDirectly: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -245,12 +326,61 @@ private fun FormScreen(
             singleLine = true
         )
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Opción de habilitar huella
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Habilitar Huella Digital",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                    )
+                    Text(
+                        text = "Permitir registrar asistencia con ID + Huella del sistema",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Switch(
+                    checked = enableFingerprint,
+                    onCheckedChange = onEnableFingerprintChange
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Captura Facial",
+            text = "Métodos de Autenticación",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
+        )
+
+        Text(
+            text = "Debe configurar al menos uno de los siguientes métodos:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "1. Captura Facial (Opcional)",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
         )
 
         Card(
@@ -281,22 +411,26 @@ private fun FormScreen(
                 Text(
                     text = if (photoCount >= 7)
                         "¡Fotos capturadas con éxito!"
+                    else if (photoCount > 0)
+                        "Continúa capturando (${photoCount}/10 fotos)"
                     else
-                        "Necesitas capturar 7-10 fotos del rostro",
+                        "Captura 7-10 fotos del rostro desde diferentes ángulos",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (photoCount >= 7)
                         MaterialTheme.colorScheme.onPrimaryContainer
                     else
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
-                Text(
-                    text = "desde diferentes ángulos",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (photoCount >= 7)
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (photoCount == 0) {
+                    Text(
+                        text = "(Opcional si habilitas Huella Digital)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "Fotos capturadas: $photoCount/10",
@@ -311,6 +445,7 @@ private fun FormScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
+        // Botón de captura facial (opcional)
         Button(
             onClick = onStartCapture,
             modifier = Modifier.fillMaxWidth(),
@@ -319,6 +454,19 @@ private fun FormScreen(
             Icon(Icons.Filled.CameraAlt, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text(if (photoCount > 0) "Continuar Capturando" else "Capturar Fotos del Rostro")
+        }
+
+        // Si solo quiere huella (sin fotos), permitir registrar directamente
+        if (enableFingerprint && photoCount == 0) {
+            FilledTonalButton(
+                onClick = onRegisterDirectly,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = canStartCapture
+            ) {
+                Icon(Icons.Filled.Fingerprint, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Registrar Solo con Huella")
+            }
         }
 
         OutlinedButton(

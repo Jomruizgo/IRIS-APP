@@ -10,8 +10,9 @@ Sistema de control de asistencia con reconocimiento facial para Android que func
 
 - **Lenguaje**: Kotlin
 - **UI**: Jetpack Compose con Material3
-- **Base de datos**: Room (SQLite)
+- **Base de datos**: Room (SQLite) con SQLCipher (encriptación)
 - **ML**: TensorFlow Lite + MobileFaceNet, ML Kit Face Detection
+- **Biometría**: Android KeyStore + BiometricPrompt (autenticación con huella dactilar)
 - **Cámara**: CameraX
 - **Sincronización**: WorkManager + Retrofit
 - **Mínimo SDK**: API 24 (Android 7.0)
@@ -80,8 +81,11 @@ ls -lh app/src/main/assets/mobilefacenet.tflite
 ### Capa de Datos (`app/src/main/java/com/attendance/facerecognition/data/`)
 
 - **`local/entities/`**: Entidades Room
-  - `Employee.kt`: Almacena empleados con sus embeddings faciales (vectores de 128 dimensiones)
+  - `Employee.kt`: Almacena empleados con sus embeddings faciales (vectores de 192 dimensiones) y alias de KeyStore para huella dactilar
   - `AttendanceRecord.kt`: Registros de entrada/salida con timestamp
+  - `User.kt`: Usuarios administrativos con roles (ADMIN, SUPERVISOR, USER)
+  - `DeviceRegistration.kt`: Dispositivos registrados con tenant ID para multi-tenancy
+  - `AttendanceAudit.kt`: Auditoría de cambios en registros
   - `FloatListConverter`: TypeConverter para serializar embeddings como JSON en SQLite
 
 - **`local/dao/`**: Data Access Objects para operaciones CRUD
@@ -107,40 +111,102 @@ ls -lh app/src/main/assets/mobilefacenet.tflite
   - Configurado con 4 threads para mejor rendimiento
 
 - **`LivenessDetector.kt`**: Sistema challenge-response para anti-spoofing
-  - 5 tipos de desafíos: parpadeo, sonrisa, giro izquierda/derecha, mirar arriba
+  - 3 tipos de desafíos: parpadeo, giro izquierda/derecha (congruente con registro)
   - Previene ataques con fotos o videos estáticos
+
+### Capa Biométrica (`app/src/main/java/com/attendance/facerecognition/biometric/`)
+
+- **`BiometricKeyManager.kt`**: Gestor de claves criptográficas en Android KeyStore
+  - Cada empleado tiene su propia SecretKey protegida por biometría
+  - `enrollFingerprint()`: Genera clave y vincula huella durante registro
+  - `verifyFingerprint()`: Verifica huella usando clave específica del empleado
+  - Usa `BiometricPrompt.CryptoObject` para autenticación por operación
+  - Claves se invalidan si se agregan nuevas huellas al dispositivo
+
+- **`BiometricAuthManager.kt`**: Wrapper simple de BiometricPrompt (legacy, reemplazado por BiometricKeyManager)
 
 ### Capa UI (`app/src/main/java/com/attendance/facerecognition/ui/`)
 
-- **`screens/HomeScreen.kt`**: Pantalla principal con navegación
-- **`screens/EmployeeRegistrationScreen.kt`**: Registro de nuevos empleados
-- **`screens/FaceRecognitionScreen.kt`**: Reconocimiento y registro de asistencia
+- **`screens/HomeScreen.kt`**: Pantalla principal con navegación y estado de sincronización
+- **`screens/LoginScreen.kt`**: Autenticación con usuario + PIN
+- **`screens/FirstTimeSetupScreen.kt`**: Configuración inicial del administrador
+- **`screens/EmployeeRegistrationScreen.kt`**: Registro de empleados con captura facial y opcional huella
+- **`screens/FingerprintEnrollmentScreen.kt`**: Vinculación de huella dactilar después de registro facial
+- **`screens/BiometricAuthScreen.kt`**: Autenticación con ID + huella dactilar
+- **`screens/FaceRecognitionScreen.kt`**: Reconocimiento facial y registro de asistencia
+- **`screens/EmployeeListScreen.kt`**: Lista de empleados con búsqueda
+- **`screens/DailyReportScreen.kt`**: Reporte de asistencia diaria
+- **`screens/SettingsScreen.kt`**: Configuración de retención de datos, sincronización manual
 - **`theme/`**: Configuración de Material3 Theme
 
 ### MainActivity
 
 `MainActivity.kt`: Activity principal que usa Jetpack Compose con navegación entre pantallas
 
-## Flujo de Datos
+## Flujos de Datos
 
-### Registro de Empleado
+### Registro de Empleado con Reconocimiento Facial
 
-1. Capturar 7-10 fotos del rostro desde diferentes ángulos (no implementado aún)
-2. Para cada foto:
+1. Admin ingresa datos: nombre, ID, departamento, cargo
+2. Admin marca checkbox "Habilitar Huella Digital" (opcional)
+3. Capturar 7-10 fotos del rostro desde diferentes ángulos:
+   - Fotos 1-3: De frente
+   - Fotos 4-6: Girar ligeramente a la izquierda
+   - Fotos 7-9: Girar ligeramente a la derecha
+   - Foto 10: De frente nuevamente
+4. Para cada foto:
    - `FaceDetector.detectFaces()` → Detecta y recorta rostro
-   - `FaceRecognizer.generateEmbedding()` → Genera vector de 128 dimensiones
-3. Guardar embeddings en Room DB vía `EmployeeDao.insert()`
+   - `FaceRecognizer.generateEmbedding()` → Genera vector de 192 dimensiones
+5. Guardar empleado con embeddings en Room DB
+6. **Si activó huella dactilar:**
+   - Mostrar `FingerprintEnrollmentScreen`
+   - `BiometricKeyManager.enrollFingerprint()` → Genera SecretKey en KeyStore
+   - Usuario coloca huella → vincula huella con la clave
+   - Guardar alias de KeyStore en `Employee.fingerprintKeystoreAlias`
 
-### Reconocimiento y Asistencia
+### Autenticación con Reconocimiento Facial
 
-1. Sistema genera desafío aleatorio con `LivenessDetector`
-2. Usuario completa desafío (liveness detection)
-3. Si pasa:
+1. Usuario selecciona tipo de registro (ENTRADA/SALIDA)
+2. Sistema genera desafío aleatorio con `LivenessDetector` (BLINK, TURN_LEFT, TURN_RIGHT)
+3. Usuario completa desafío (liveness detection)
+4. Si pasa:
    - `FaceDetector.detectFaces()` → Detecta rostro
    - `FaceRecognizer.generateEmbedding()` → Genera embedding
    - `FaceRecognizer.findBestMatch()` → Compara con embeddings almacenados usando similitud coseno
-   - Si confianza > 85% → Guardar registro en `AttendanceDao`
-4. `WorkManager` sincroniza con servidor cuando hay WiFi (no implementado)
+   - Si confianza > 85% → Validar entrada/salida
+   - Guardar registro en `AttendanceDao`
+   - Registrar en `AttendanceAudit`
+5. Mostrar confirmación con opción "Este no soy yo" para cancelar
+
+### Autenticación con ID + Huella Dactilar
+
+1. Usuario selecciona "Registrar con ID + Huella"
+2. Selecciona tipo de registro (ENTRADA/SALIDA)
+3. Ingresa su ID de empleado en teclado numérico
+4. Sistema busca empleado por ID
+5. **Validaciones:**
+   - Si empleado no existe → Error: "Empleado no encontrado"
+   - Si `hasFingerprintEnabled = false` → Error: "No tiene huella registrada. Intenta con otro método o contacta al administrador"
+   - Si `fingerprintKeystoreAlias` es null → Error: "No tiene huella vinculada. Contacta al administrador"
+6. `BiometricKeyManager.verifyFingerprint()` con alias específico del empleado
+7. Usuario coloca huella → intenta desbloquear SecretKey
+8. Si huella coincide (solo la registrada puede desbloquear):
+   - Validar entrada/salida
+   - Guardar registro con `confidence = 1.0` (100%)
+   - Registrar en auditoría
+9. Si huella no coincide → Error con posibilidad de reintentar
+
+### Sincronización con Backend (Multi-Tenancy)
+
+1. Dispositivo debe activarse con código: `TENANT-CODIGO` (ej: ACME-ABC123)
+2. Backend devuelve JWT con `tenant_id` embebido
+3. `WorkManager` ejecuta sincronización periódica cuando hay WiFi
+4. Envía registros pendientes (`isSynced = 0`) con headers:
+   - `Authorization: Bearer <jwt_token>`
+   - `X-Tenant-ID: <tenant_id>`
+5. Backend guarda en DynamoDB con composite keys: `tenant_id#employee_id`
+6. Marca registros como `isSynced = 1`
+7. `DataRetentionManager` elimina solo registros sincronizados antiguos
 
 ## Modelo MobileFaceNet
 
@@ -194,42 +260,96 @@ Para optimizar:
   - Sonrisa: > 0.7
   - Giro de cabeza: > 20 grados
 
+### Autenticación Biométrica con Huella Dactilar
+
+**Implementación con Android KeyStore:**
+- Cada empleado tiene una SecretKey única en KeyStore
+- La clave se configura con `setUserAuthenticationRequired(true)`
+- Solo la huella registrada originalmente puede desbloquear la clave
+- Usa `BiometricPrompt.CryptoObject` para vincular huella con operación criptográfica
+- Si se agregan nuevas huellas al dispositivo, las claves se invalidan (`setInvalidatedByBiometricEnrollment`)
+
+**Seguridad:**
+- NO se almacenan plantillas biométricas (Android lo prohíbe por seguridad)
+- Las huellas permanecen en TEE (Trusted Execution Environment)
+- Cada empleado solo puede autenticarse con SU huella específica
+- Cualquier otra huella del dispositivo NO funcionará
+
+**Flujo:**
+1. Registro: `BiometricKeyManager.enrollFingerprint()` → Genera clave + pide huella
+2. Autenticación: `BiometricKeyManager.verifyFingerprint(keystoreAlias)` → Solo esa huella desbloquea
+3. Almacenamiento: Solo se guarda el alias de KeyStore en `Employee.fingerprintKeystoreAlias`
+
+### Base de Datos
+
+- **Motor**: SQLite con SQLCipher (encriptación AES-256)
+- **Versión actual**: 7
+- **Passphrase**: Generada aleatoriamente (32 bytes) y guardada en SharedPreferences
+- **Migración**: `fallbackToDestructiveMigration()` (solo para desarrollo)
+- **Entidades**: Employee, AttendanceRecord, AttendanceAudit, User, DeviceRegistration
+
 ### Limitaciones
 
-- Requiere buena iluminación (sin implementación de modo nocturno)
-- Cambios significativos de apariencia (barba, gafas) pueden requerir re-registro
-- CameraX aún no está integrado en las pantallas
-- No hay ViewModels ni Repository pattern implementados
+- Requiere buena iluminación para reconocimiento facial
+- Cambios significativos de apariencia pueden requerir re-registro
+- Reconocimiento facial funciona mejor en dispositivos gama media/alta
+- Huella dactilar requiere sensor biométrico en el dispositivo
+- La app funciona 100% offline, sincronización requiere WiFi
 
 ## Estructura de Paquetes
 
 ```
 com.attendance.facerecognition/
+├── biometric/             # Autenticación biométrica
+│   ├── BiometricKeyManager.kt
+│   └── BiometricAuthManager.kt (legacy)
 ├── data/
-│   └── local/
-│       ├── entities/      # Room entities
-│       ├── dao/           # DAOs
-│       └── database/      # DB config
-├── ml/                    # Componentes ML
+│   ├── local/
+│   │   ├── entities/      # Room entities
+│   │   ├── dao/           # DAOs
+│   │   └── database/      # AppDatabase + encriptación
+│   └── repository/        # Repositories
+├── export/                # Exportación de reportes
+├── ml/                    # Componentes ML (TensorFlow Lite + ML Kit)
+├── settings/              # Configuración y retención de datos
+├── sync/                  # Sincronización con backend
 ├── ui/
+│   ├── components/        # Componentes reutilizables (CameraPreview)
 │   ├── screens/           # Composables de pantallas
+│   ├── viewmodels/        # ViewModels por pantalla
 │   └── theme/             # Tema Material3
 └── MainActivity.kt
 ```
 
-## Próximos Pasos de Desarrollo
+## Estado Actual de Implementación
 
-1. Integrar CameraX en pantallas de registro y reconocimiento
-2. Implementar ViewModels para cada pantalla
-3. Crear capa Repository para abstraer acceso a datos
-4. Implementar sincronización con WorkManager
-5. Manejar permisos de cámara dinámicamente con Accompanist
-6. Testing unitario de componentes ML
-7. Testing instrumentado de flujo completo
+### ✅ Completado
+- Registro de empleados con captura facial (7-10 fotos)
+- Reconocimiento facial con liveness detection
+- Autenticación con ID + huella dactilar (por empleado específico)
+- Sistema de roles (ADMIN, SUPERVISOR, USER)
+- Autenticación con usuario + PIN
+- Lista de empleados con búsqueda
+- Reporte diario de asistencia
+- Auditoría de registros
+- Encriptación de base de datos (SQLCipher)
+- Multi-tenancy con device registration
+- Retención de datos con eliminación segura
+- Sincronización manual y automática (estructura)
+- Logo IRIS integrado en todas las pantallas
+
+### 🚧 Pendiente
+- Backend con DynamoDB (documentado en docs/04-API-REQUIREMENTS.md)
+- Testing unitario e instrumentado
+- Exportación de reportes a PDF/Excel
+- Modo nocturno para mejor captura
+- Optimización GPU para reconocimiento facial
 
 ## Dependencias Clave
 
 - Room: 2.6.1 (con KSP)
+- SQLCipher: 4.5.4 (encriptación de base de datos)
+- Biometric: 1.1.0 (autenticación con huella)
 - ML Kit Face Detection: 16.1.6
 - TensorFlow Lite: 2.14.0 (con soporte GPU)
 - CameraX: 1.3.1

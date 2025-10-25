@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.attendance.facerecognition.data.local.database.AppDatabase
 import com.attendance.facerecognition.data.local.entities.AttendanceRecord
 import com.attendance.facerecognition.data.repository.AttendanceRepository
+import com.attendance.facerecognition.export.CsvExporter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +18,7 @@ class DailyReportViewModel(application: Application) : AndroidViewModel(applicat
 
     private val database = AppDatabase.getDatabase(application)
     private val attendanceRepository = AttendanceRepository(database.attendanceDao())
+    private val csvExporter = CsvExporter(application)
 
     private val _records = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val records: StateFlow<List<AttendanceRecord>> = _records.asStateFlow()
@@ -26,6 +28,9 @@ class DailyReportViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _selectedDate = MutableStateFlow(Date())
     val selectedDate: StateFlow<Date> = _selectedDate.asStateFlow()
+
+    private val _dailyStats = MutableStateFlow(DailyStats(0, 0, 0, 0))
+    val dailyStats: StateFlow<DailyStats> = _dailyStats.asStateFlow()
 
     init {
         loadTodayRecords()
@@ -65,6 +70,7 @@ class DailyReportViewModel(application: Application) : AndroidViewModel(applicat
 
                 attendanceRepository.getRecordsByDateRange(startOfDay, endOfDay).collect { recordsList ->
                     _records.value = recordsList
+                    updateDailyStats(recordsList)
                     _uiState.value = if (recordsList.isEmpty()) {
                         DailyReportUiState.Empty
                     } else {
@@ -78,19 +84,32 @@ class DailyReportViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * Estadísticas del día
+     * Actualiza las estadísticas del día
      */
-    fun getDailyStats(): DailyStats {
-        val entriesCount = _records.value.count { it.type == com.attendance.facerecognition.data.local.entities.AttendanceType.ENTRY }
-        val exitsCount = _records.value.count { it.type == com.attendance.facerecognition.data.local.entities.AttendanceType.EXIT }
-        val uniqueEmployees = _records.value.map { it.employeeId }.distinct().size
+    private fun updateDailyStats(recordsList: List<AttendanceRecord>) {
+        val entriesCount = recordsList.count { it.type == com.attendance.facerecognition.data.local.entities.AttendanceType.ENTRY }
+        val exitsCount = recordsList.count { it.type == com.attendance.facerecognition.data.local.entities.AttendanceType.EXIT }
+        val uniqueEmployees = recordsList.map { it.employeeId }.distinct().size
 
-        return DailyStats(
-            totalRecords = _records.value.size,
+        _dailyStats.value = DailyStats(
+            totalRecords = recordsList.size,
             entries = entriesCount,
             exits = exitsCount,
             uniqueEmployees = uniqueEmployees
         )
+    }
+
+    /**
+     * Exporta los registros actuales a CSV
+     * Retorna la ruta del archivo o null si hay error
+     */
+    fun exportToCsv(): String? {
+        return try {
+            val result = csvExporter.exportToCsv(_records.value)
+            result.getOrNull()
+        } catch (e: Exception) {
+            null
+        }
     }
 }
 

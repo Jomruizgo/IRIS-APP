@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +30,7 @@ import java.util.*
 @Composable
 fun FaceRecognitionScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToBiometric: (AttendanceType) -> Unit = {},
     viewModel: FaceRecognitionViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -96,6 +98,7 @@ fun FaceRecognitionScreen(
             } else {
                 // Pantalla de inicio
                 IdleScreen(
+                    onNavigateToBiometric = onNavigateToBiometric,
                     onStartScan = {
                         if (cameraPermissionState.status.isGranted) {
                             isScanning = true
@@ -227,6 +230,7 @@ fun FaceRecognitionScreen(
 private fun IdleScreen(
     onStartScan: () -> Unit,
     onNavigateBack: () -> Unit,
+    onNavigateToBiometric: (AttendanceType) -> Unit,
     viewModel: FaceRecognitionViewModel
 ) {
     val selectedType by viewModel.selectedType.collectAsState()
@@ -388,7 +392,22 @@ private fun IdleScreen(
         ) {
             Icon(Icons.Filled.Face, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Iniciar Reconocimiento")
+            Text("Reconocimiento Facial")
+        }
+
+        // Botón alternativo: Huella Digital
+        OutlinedButton(
+            onClick = {
+                selectedType?.let { type ->
+                    onNavigateToBiometric(type)
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedType != null
+        ) {
+            Icon(Icons.Filled.Fingerprint, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Usar Huella Digital")
         }
 
         OutlinedButton(

@@ -1,15 +1,18 @@
 package com.attendance.facerecognition.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -28,7 +31,8 @@ fun DailyReportScreen(
     val records by viewModel.records.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val selectedDate by viewModel.selectedDate.collectAsState()
-    val stats = viewModel.getDailyStats()
+    val stats by viewModel.dailyStats.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -39,10 +43,38 @@ fun DailyReportScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                     }
                 },
+                actions = {
+                    // Botón de exportar CSV
+                    IconButton(
+                        onClick = {
+                            val filePath = viewModel.exportToCsv()
+                            if (filePath != null) {
+                                Toast.makeText(
+                                    context,
+                                    "CSV exportado: $filePath",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Error al exportar CSV",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        enabled = records.isNotEmpty()
+                    ) {
+                        Icon(
+                            Icons.Filled.FileDownload,
+                            contentDescription = "Exportar CSV"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }

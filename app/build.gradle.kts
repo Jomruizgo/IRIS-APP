@@ -80,6 +80,10 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
+    // SQLCipher for database encryption (nueva librería)
+    implementation("net.zetetic:sqlcipher-android:4.6.0")
+    implementation("androidx.sqlite:sqlite:2.4.0")
+
     // ML Kit Face Detection
     implementation("com.google.mlkit:face-detection:16.1.6")
 

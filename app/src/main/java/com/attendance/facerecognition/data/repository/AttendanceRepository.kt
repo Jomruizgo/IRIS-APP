@@ -91,4 +91,22 @@ class AttendanceRepository(private val attendanceDao: AttendanceDao) {
      */
     suspend fun deleteOldRecords(olderThan: Long) =
         attendanceDao.deleteOldRecords(olderThan)
+
+    /**
+     * Contar registros antiguos que ya fueron sincronizados
+     */
+    suspend fun countOldSyncedRecords(olderThan: Long): Int =
+        attendanceDao.countOldSyncedRecords(olderThan)
+
+    /**
+     * Eliminar SOLO registros antiguos que ya fueron sincronizados
+     */
+    suspend fun deleteOldSyncedRecords(olderThan: Long) =
+        attendanceDao.deleteOldSyncedRecords(olderThan)
+
+    /**
+     * Obtener conteo de registros no sincronizados
+     */
+    suspend fun getUnsyncedRecordCount(): Int =
+        attendanceDao.getUnsyncedRecordCount()
 }

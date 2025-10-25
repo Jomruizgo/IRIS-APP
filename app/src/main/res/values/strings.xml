@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Control de Asistencia</string>
+    <string name="app_name">IRIS</string>
     <string name="camera_permission_required">Se requiere permiso de cámara</string>
     <string name="grant_permission">Otorgar permiso</string>
     <string name="employee_registered">Empleado registrado exitosamente</string>

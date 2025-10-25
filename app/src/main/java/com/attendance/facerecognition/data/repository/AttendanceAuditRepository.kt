@@ -56,6 +56,18 @@ class AttendanceAuditRepository(private val auditDao: AttendanceAuditDao) {
         auditDao.deleteOldAudits(olderThan)
 
     /**
+     * Contar auditorías antiguas que ya fueron sincronizadas
+     */
+    suspend fun countOldSyncedAudits(olderThan: Long): Int =
+        auditDao.countOldSyncedAudits(olderThan)
+
+    /**
+     * Eliminar SOLO auditorías antiguas que ya fueron sincronizadas
+     */
+    suspend fun deleteOldSyncedAudits(olderThan: Long) =
+        auditDao.deleteOldSyncedAudits(olderThan)
+
+    /**
      * Obtiene el conteo de auditorías por acción
      */
     suspend fun getAuditCountByAction(action: AuditAction): Int =

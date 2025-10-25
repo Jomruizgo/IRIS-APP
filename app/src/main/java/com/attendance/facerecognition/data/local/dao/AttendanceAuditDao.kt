@@ -32,6 +32,12 @@ interface AttendanceAuditDao {
     @Query("DELETE FROM attendance_audit WHERE timestamp < :olderThan")
     suspend fun deleteOldAudits(olderThan: Long)
 
+    @Query("SELECT COUNT(*) FROM attendance_audit WHERE timestamp < :olderThan AND isSynced = 1")
+    suspend fun countOldSyncedAudits(olderThan: Long): Int
+
+    @Query("DELETE FROM attendance_audit WHERE timestamp < :olderThan AND isSynced = 1")
+    suspend fun deleteOldSyncedAudits(olderThan: Long)
+
     @Query("SELECT COUNT(*) FROM attendance_audit WHERE action = :action")
     suspend fun getAuditCountByAction(action: AuditAction): Int
 

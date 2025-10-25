@@ -71,8 +71,9 @@ class DataRetentionManager(private val context: Context) {
 
     /**
      * Elimina registros antiguos según la política de retención
+     * IMPORTANTE: Solo elimina registros que ya fueron sincronizados
      */
-    suspend fun cleanOldRecords() {
+    suspend fun cleanOldRecords(): CleanupResult {
         // Obtener configuración actual
         val attendanceDays = attendanceRetentionDays
         val auditDays = auditRetentionDays
@@ -93,10 +94,27 @@ class DataRetentionManager(private val context: Context) {
         calendar.add(Calendar.DAY_OF_YEAR, -auditRetention)
         val auditCutoff = calendar.timeInMillis
 
-        // Eliminar registros antiguos
-        attendanceRepository.deleteOldRecords(attendanceCutoff)
-        auditRepository.deleteOldAudits(auditCutoff)
+        // Contar registros antes de eliminar
+        val attendanceToDelete = attendanceRepository.countOldSyncedRecords(attendanceCutoff)
+        val auditToDelete = auditRepository.countOldSyncedAudits(auditCutoff)
+        val unsyncedCount = attendanceRepository.getUnsyncedRecordCount()
+
+        // Eliminar SOLO registros sincronizados antiguos
+        attendanceRepository.deleteOldSyncedRecords(attendanceCutoff)
+        auditRepository.deleteOldSyncedAudits(auditCutoff)
+
+        return CleanupResult(
+            attendanceDeleted = attendanceToDelete,
+            auditDeleted = auditToDelete,
+            unsyncedSkipped = unsyncedCount
+        )
     }
+
+    data class CleanupResult(
+        val attendanceDeleted: Int,
+        val auditDeleted: Int,
+        val unsyncedSkipped: Int
+    )
 
     /**
      * Opciones de retención predefinidas

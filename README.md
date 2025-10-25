@@ -1,6 +1,20 @@
-# Sistema de Control de Asistencia con Reconocimiento Facial
+# IRIS - Identificación Rápida e Inteligente Sin conexión
 
-Sistema robusto de control de asistencia para Android que utiliza reconocimiento facial con ML Kit y TensorFlow Lite, diseñado para funcionar **completamente offline** con sincronización opcional cuando hay conexión a internet.
+![Logo IRIS](docs/iris-logo.png)
+
+**IRIS** es un sistema robusto de control de asistencia biométrica para Android que utiliza reconocimiento facial con ML Kit y TensorFlow Lite, diseñado para funcionar **completamente offline** con sincronización opcional cuando hay conexión a internet.
+
+## 📖 Significado del Nombre
+
+**IRIS** es un acrónimo que representa:
+- **I**dentificación
+- **R**ápida e
+- **I**nteligente
+- **S**in conexión
+
+El nombre hace referencia al iris del ojo humano, elemento clave en la identificación biométrica, y simboliza la capacidad del sistema para reconocer personas de forma instantánea y precisa sin necesidad de conectividad.
+
+*Eslogan:* **"IRIS - Te vemos, te reconocemos"**
 
 ## 🎯 Características Principales
 
