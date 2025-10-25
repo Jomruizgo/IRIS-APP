@@ -4,6 +4,8 @@ import android.content.Context
 import com.attendance.facerecognition.device.DeviceManager
 import com.attendance.facerecognition.network.api.AttendanceApiService
 import com.attendance.facerecognition.settings.SettingsManager
+import com.attendance.facerecognition.sync.TenantInterceptor
+import com.attendance.facerecognition.tenant.TenantManager
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -30,8 +32,10 @@ object RetrofitClient {
     private fun buildApiService(context: Context): AttendanceApiService {
         val deviceManager = DeviceManager(context)
         val settingsManager = SettingsManager(context)
+        val tenantManager = TenantManager(context)
 
         val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(TenantInterceptor(tenantManager)) // Agregar tenant code a headers
             .addInterceptor(AuthInterceptor(deviceManager))
             .addInterceptor(createLoggingInterceptor())
             .connectTimeout(30, TimeUnit.SECONDS)

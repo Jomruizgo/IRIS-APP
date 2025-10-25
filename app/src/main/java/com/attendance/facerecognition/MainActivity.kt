@@ -25,15 +25,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.attendance.facerecognition.auth.SessionManager
 import com.attendance.facerecognition.data.local.entities.AttendanceType
 import com.attendance.facerecognition.data.repository.UserRepository
-import com.attendance.facerecognition.device.DeviceManager
-import kotlinx.coroutines.flow.first
 import com.attendance.facerecognition.ui.screens.BiometricAuthScreen
 import com.attendance.facerecognition.ui.screens.DailyReportScreen
 import com.attendance.facerecognition.ui.screens.DeviceActivationScreen
@@ -45,7 +38,10 @@ import com.attendance.facerecognition.ui.screens.FaceRecognitionScreen
 import com.attendance.facerecognition.ui.screens.FirstTimeSetupScreen
 import com.attendance.facerecognition.ui.screens.HomeScreen
 import com.attendance.facerecognition.ui.screens.LoginScreen
+import com.attendance.facerecognition.ui.screens.PendingApprovalScreen
 import com.attendance.facerecognition.ui.screens.SettingsScreen
+import com.attendance.facerecognition.ui.screens.AttendanceHistoryScreen
+import com.attendance.facerecognition.ui.screens.EmployeeAttendanceHistoryScreen
 import com.attendance.facerecognition.ui.screens.UserListScreen
 import com.attendance.facerecognition.ui.screens.UserRegistrationScreen
 import com.attendance.facerecognition.ui.theme.FaceRecognitionTheme
@@ -81,30 +77,21 @@ fun FaceRecognitionApp() {
             val context = navController.context
             val database = com.attendance.facerecognition.data.local.database.AppDatabase.getDatabase(context)
             val userRepository = UserRepository(database.userDao())
-            val sessionManager = SessionManager(context)
 
             // 1. Verificar si hay usuarios en el sistema
             val hasAdmin = userRepository.hasAdmin()
 
             if (!hasAdmin) {
-                // No hay usuarios → Primera vez
+                // No hay usuarios → Primera vez (configuración inicial)
                 startDestination = "first_time_setup"
             } else {
-                // Hay usuarios → Verificar sesión
-                val isLoggedIn = sessionManager.isLoggedIn.first()
-                val sessionExpired = sessionManager.isSessionExpired()
-
-                if (isLoggedIn && !sessionExpired) {
-                    // Sesión activa y válida → Home
-                    startDestination = "home"
-                } else {
-                    // No hay sesión o expiró → Login
-                    startDestination = "login"
-                }
+                // Hay usuarios → Ir directo a Home
+                // El login solo se pedirá cuando se intente acceder a funciones administrativas
+                startDestination = "home"
             }
         } catch (e: Exception) {
-            // En caso de error, ir a login por seguridad
-            startDestination = "login"
+            // En caso de error, ir a home por defecto (funciones básicas siempre disponibles)
+            startDestination = "home"
         } finally {
             isLoading = false
         }
@@ -157,6 +144,12 @@ fun FaceRecognitionApp() {
                     onNavigateToUserManagement = {
                         navController.navigate("user_list")
                     },
+                    onNavigateToPendingApproval = {
+                        navController.navigate("pending_approval")
+                    },
+                    onNavigateToAttendanceHistory = {
+                        navController.navigate("attendance_history")
+                    },
                     onNavigateToLogin = {
                         navController.navigate("login")
                     },
@@ -178,10 +171,6 @@ fun FaceRecognitionApp() {
                 FaceRecognitionScreen(
                     onNavigateBack = {
                         navController.popBackStack()
-                    },
-                    onNavigateToBiometric = { attendanceType ->
-                        val typeParam = if (attendanceType == AttendanceType.ENTRY) "ENTRY" else "EXIT"
-                        navController.navigate("biometric_auth/$typeParam")
                     }
                 )
             }
@@ -207,6 +196,14 @@ fun FaceRecognitionApp() {
 
             composable("settings") {
                 SettingsScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable("attendance_history") {
+                AttendanceHistoryScreen(
                     onNavigateBack = {
                         navController.popBackStack()
                     }
@@ -245,6 +242,9 @@ fun FaceRecognitionApp() {
                     },
                     onNavigateToEdit = { empId ->
                         navController.navigate("employee_edit/$empId")
+                    },
+                    onNavigateToHistory = { empId ->
+                        navController.navigate("employee_attendance_history/$empId")
                     }
                 )
             }
@@ -256,6 +256,20 @@ fun FaceRecognitionApp() {
                 val employeeId = backStackEntry.arguments?.getLong("employeeId") ?: 0L
 
                 EmployeeEditScreen(
+                    employeeId = employeeId,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable(
+                route = "employee_attendance_history/{employeeId}",
+                arguments = listOf(navArgument("employeeId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val employeeId = backStackEntry.arguments?.getLong("employeeId") ?: 0L
+
+                EmployeeAttendanceHistoryScreen(
                     employeeId = employeeId,
                     onNavigateBack = {
                         navController.popBackStack()
@@ -303,6 +317,15 @@ fun FaceRecognitionApp() {
 
             composable("user_registration") {
                 UserRegistrationScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            // Pantalla de aprobación de registros pendientes
+            composable("pending_approval") {
+                PendingApprovalScreen(
                     onNavigateBack = {
                         navController.popBackStack()
                     }

@@ -76,41 +76,13 @@ class BiometricAuthViewModel(application: Application) : AndroidViewModel(applic
                     return@launch
                 }
 
-                // Verificar que el empleado tenga huella habilitada
-                if (!employee.hasFingerprintEnabled) {
-                    _uiState.value = BiometricAuthState.Error(
-                        "${employee.fullName} no tiene huella registrada.\n\n" +
-                        "Intenta con otro método o contacta al administrador del sistema."
-                    )
-                    return@launch
-                }
-
-                // Verificar que tenga alias de KeyStore
-                if (employee.fingerprintKeystoreAlias.isNullOrEmpty()) {
-                    _uiState.value = BiometricAuthState.Error(
-                        "${employee.fullName} no tiene huella vinculada.\n\n" +
-                        "Contacta al administrador para registrar tu huella."
-                    )
-                    return@launch
-                }
-
-                currentEmployee = employee
-                _uiState.value = BiometricAuthState.EmployeeFound(employee.fullName)
-                _uiState.value = BiometricAuthState.Authenticating
-
-                // Verificar huella usando la clave específica del empleado
-                biometricKeyManager.verifyFingerprint(
-                    keystoreAlias = employee.fingerprintKeystoreAlias!!,
-                    employeeName = employee.fullName,
-                    activity = activity,
-                    onSuccess = {
-                        // Autenticación exitosa, registrar asistencia
-                        registerAttendance(employee, attendanceType)
-                    },
-                    onError = { errorMessage ->
-                        _uiState.value = BiometricAuthState.Error(errorMessage)
-                    }
+                // NOTA: La autenticación biométrica para empleados ha sido removida
+                // Solo se usa reconocimiento facial para empleados
+                _uiState.value = BiometricAuthState.Error(
+                    "La autenticación con huella para empleados ya no está disponible.\n\n" +
+                    "Por favor, usa el reconocimiento facial."
                 )
+                return@launch
 
             } catch (e: Exception) {
                 _uiState.value = BiometricAuthState.Error("Error: ${e.message}")

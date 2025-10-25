@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,7 @@ fun EmployeeDetailScreen(
     employeeId: Long,
     onNavigateBack: () -> Unit,
     onNavigateToEdit: (Long) -> Unit = {},
+    onNavigateToHistory: (Long) -> Unit = {},
     viewModel: EmployeeDetailViewModel = viewModel()
 ) {
     val employee by viewModel.employee.collectAsState()
@@ -181,16 +183,6 @@ fun EmployeeDetailScreen(
                             else
                                 "No configurado"
                         )
-
-                        BiometricMethodRow(
-                            icon = Icons.Filled.Fingerprint,
-                            label = "Huella Digital",
-                            enabled = emp.hasFingerprintEnabled,
-                            detail = if (emp.hasFingerprintEnabled)
-                                "Configurada"
-                            else
-                                "No configurada"
-                        )
                     }
                 }
 
@@ -230,6 +222,16 @@ fun EmployeeDetailScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(if (emp.isActive) "Desactivar" else "Activar")
                     }
+                }
+
+                // Botón historial de asistencia
+                OutlinedButton(
+                    onClick = { onNavigateToHistory(employeeId) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.History, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Ver Historial de Asistencia")
                 }
 
                 // Botón eliminar

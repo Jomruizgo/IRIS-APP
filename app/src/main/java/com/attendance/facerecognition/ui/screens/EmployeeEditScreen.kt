@@ -46,13 +46,6 @@ fun EmployeeEditScreen(
     var department by remember { mutableStateOf("") }
     var position by remember { mutableStateOf("") }
     var isActive by remember { mutableStateOf(true) }
-    var hasFingerprintEnabled by remember { mutableStateOf(false) }
-    var hasRegisteredFingerprint by remember { mutableStateOf(false) }
-
-    var showFingerprintEnrollment by remember { mutableStateOf(false) }
-    var fingerprintEnrollmentError by remember { mutableStateOf<String?>(null) }
-
-    val biometricKeyManager = remember { BiometricKeyManager(context) }
 
     // Cargar datos del empleado
     LaunchedEffect(employeeId) {
@@ -66,8 +59,6 @@ fun EmployeeEditScreen(
             department = emp.department
             position = emp.position
             isActive = emp.isActive
-            hasFingerprintEnabled = emp.hasFingerprintEnabled
-            hasRegisteredFingerprint = !emp.fingerprintKeystoreAlias.isNullOrEmpty()
         }
     }
 
@@ -88,7 +79,6 @@ fun EmployeeEditScreen(
                                 department = department,
                                 position = position,
                                 isActive = isActive,
-                                hasFingerprintEnabled = hasFingerprintEnabled,
                                 onSuccess = {
                                     Toast.makeText(
                                         context,
@@ -243,113 +233,6 @@ fun EmployeeEditScreen(
                     }
                 }
 
-                // Switch de huella digital
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Habilitar Huella Digital",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = if (hasRegisteredFingerprint) {
-                                        "Huella registrada ✓"
-                                    } else {
-                                        "Permitir autenticación con huella"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (hasRegisteredFingerprint) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                    },
-                                    fontWeight = if (hasRegisteredFingerprint) FontWeight.Medium else FontWeight.Normal
-                                )
-                            }
-                            Switch(
-                                checked = hasFingerprintEnabled,
-                                onCheckedChange = { hasFingerprintEnabled = it },
-                                enabled = !isSaving
-                            )
-                        }
-
-                        // Botón para registrar huella
-                        if (hasFingerprintEnabled && !hasRegisteredFingerprint) {
-                            Button(
-                                onClick = {
-                                    when {
-                                        activity == null -> {
-                                            Toast.makeText(
-                                                context,
-                                                "Error: No se puede acceder a la actividad",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                        employee == null -> {
-                                            Toast.makeText(
-                                                context,
-                                                "Error: Datos del empleado no cargados",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                        else -> {
-                                            biometricKeyManager.enrollFingerprint(
-                                                employeeId = employee!!.employeeId,
-                                                activity = activity,
-                                                onSuccess = { keystoreAlias ->
-                                                    viewModel.updateFingerprintAlias(
-                                                        keystoreAlias = keystoreAlias,
-                                                        onSuccess = {
-                                                            hasRegisteredFingerprint = true
-                                                            Toast.makeText(context, "Huella registrada exitosamente", Toast.LENGTH_SHORT).show()
-                                                        },
-                                                        onError = { error ->
-                                                            fingerprintEnrollmentError = error
-                                                        }
-                                                    )
-                                                },
-                                                onError = { error ->
-                                                    fingerprintEnrollmentError = error
-                                                }
-                                            )
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.tertiary
-                                )
-                            ) {
-                                Icon(Icons.Filled.Fingerprint, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Registrar Huella Ahora")
-                            }
-
-                            Text(
-                                text = "Debes registrar la huella del empleado para que pueda autenticarse",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Botón guardar (también está en TopBar)
@@ -360,7 +243,6 @@ fun EmployeeEditScreen(
                             department = department,
                             position = position,
                             isActive = isActive,
-                            hasFingerprintEnabled = hasFingerprintEnabled,
                             onSuccess = {
                                 Toast.makeText(
                                     context,
@@ -405,20 +287,5 @@ fun EmployeeEditScreen(
                 }
             }
         }
-    }
-
-    // Diálogo de error de huella
-    fingerprintEnrollmentError?.let { error ->
-        AlertDialog(
-            onDismissRequest = { fingerprintEnrollmentError = null },
-            icon = { Icon(Icons.Filled.Fingerprint, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Error al Registrar Huella") },
-            text = { Text(error) },
-            confirmButton = {
-                Button(onClick = { fingerprintEnrollmentError = null }) {
-                    Text("Entendido")
-                }
-            }
-        )
     }
 }

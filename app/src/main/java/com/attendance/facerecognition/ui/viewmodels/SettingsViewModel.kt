@@ -6,20 +6,24 @@ import androidx.lifecycle.viewModelScope
 import com.attendance.facerecognition.network.RetrofitClient
 import com.attendance.facerecognition.settings.DataRetentionManager
 import com.attendance.facerecognition.settings.SettingsManager
+import com.attendance.facerecognition.tenant.TenantManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val retentionManager = DataRetentionManager(application)
     private val settingsManager = SettingsManager(application)
+    private val tenantManager = TenantManager(application)
 
     val attendanceRetentionDays: Flow<Int> = retentionManager.attendanceRetentionDays
     val auditRetentionDays: Flow<Int> = retentionManager.auditRetentionDays
     val serverUrl: Flow<String> = settingsManager.getServerUrlFlow()
+    val tenantCode: Flow<String> = tenantManager.tenantCode.map { it ?: "" }
 
     private val _cleanupResult = MutableStateFlow<DataRetentionManager.CleanupResult?>(null)
     val cleanupResult: StateFlow<DataRetentionManager.CleanupResult?> = _cleanupResult.asStateFlow()
@@ -83,6 +87,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             settingsManager.resetServerUrl()
             RetrofitClient.invalidate()
+        }
+    }
+
+    /**
+     * Actualiza el código de tenant
+     */
+    fun updateTenantCode(code: String) {
+        viewModelScope.launch {
+            tenantManager.setTenantCode(code.trim().uppercase())
+        }
+    }
+
+    /**
+     * Limpia el código de tenant
+     */
+    fun clearTenantCode() {
+        viewModelScope.launch {
+            tenantManager.setTenantCode("")
         }
     }
 }

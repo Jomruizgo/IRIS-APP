@@ -23,18 +23,7 @@ data class Employee(
     val faceEmbeddings: List<FloatArray>,
 
     val createdAt: Long = System.currentTimeMillis(),
-    val isActive: Boolean = true,
-
-    // Indica si el empleado tiene habilitada autenticación por huella
-    // ✅ SE SINCRONIZA: Indica capacidad del empleado para usar huella
-    val hasFingerprintEnabled: Boolean = false,
-
-    // Alias de la clave en Android KeyStore asociada a la huella del empleado
-    // Solo tiene valor si hasFingerprintEnabled = true
-    // Esta clave solo puede desbloquearse con la huella específica que el empleado registró
-    // ❌ NO SE SINCRONIZA: Es específico del dispositivo local (KeyStore local)
-    // Si el empleado se sincroniza a otro dispositivo, debe RE-VINCULAR su huella allí
-    val fingerprintKeystoreAlias: String? = null
+    val isActive: Boolean = true
 )
 
 /**

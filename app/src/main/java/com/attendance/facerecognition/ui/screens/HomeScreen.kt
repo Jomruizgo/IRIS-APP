@@ -10,7 +10,9 @@ import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ManageAccounts
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Settings
@@ -37,6 +39,8 @@ fun HomeScreen(
     onNavigateToReports: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToUserManagement: () -> Unit = {},
+    onNavigateToPendingApproval: () -> Unit = {},
+    onNavigateToAttendanceHistory: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
@@ -50,6 +54,7 @@ fun HomeScreen(
     val pendingRecordsCount by viewModel.pendingRecordsCount.collectAsState()
     val networkStatus by viewModel.networkStatus.collectAsState()
     val deviceRegistration by viewModel.deviceRegistration.collectAsState()
+    val tenantCode by viewModel.tenantCode.collectAsState()
 
     var showLogoutDialog by remember { mutableStateOf(false) }
 
@@ -144,20 +149,58 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    // Botón de sincronización manual
+                    // Botón de notificaciones de aprobaciones pendientes (solo ADMIN/SUPERVISOR)
+                    if (canViewReports && pendingRecordsCount > 0) {
+                        BadgedBox(
+                            badge = {
+                                Badge {
+                                    Text(pendingRecordsCount.toString())
+                                }
+                            }
+                        ) {
+                            IconButton(
+                                onClick = { navigateWithAuth(onNavigateToPendingApproval) }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Notifications,
+                                    contentDescription = "Aprobaciones pendientes"
+                                )
+                            }
+                        }
+                    }
+
+                    // Botón de sincronización manual (solo si hay tenant configurado)
                     IconButton(
                         onClick = {
-                            SyncWorker.syncNow(context)
-                            Toast.makeText(
-                                context,
-                                "Sincronización iniciada",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+                            if (!tenantCode.isNullOrEmpty() && deviceRegistration != null) {
+                                SyncWorker.syncNow(context)
+                                Toast.makeText(
+                                    context,
+                                    "Sincronización iniciada",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                val message = when {
+                                    tenantCode.isNullOrEmpty() -> "Configure el código de tenant en Configuración"
+                                    deviceRegistration == null -> "Dispositivo no registrado. Active el dispositivo en Configuración"
+                                    else -> "Sincronización no disponible"
+                                }
+                                Toast.makeText(
+                                    context,
+                                    message,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        },
+                        enabled = !tenantCode.isNullOrEmpty() && deviceRegistration != null
                     ) {
                         Icon(
                             Icons.Filled.Sync,
-                            contentDescription = "Sincronizar ahora"
+                            contentDescription = "Sincronizar ahora",
+                            tint = if (!tenantCode.isNullOrEmpty() && deviceRegistration != null)
+                                MaterialTheme.colorScheme.onSurface
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     }
 
@@ -339,8 +382,45 @@ fun HomeScreen(
                         }
                     }
 
-                    // Botón Configuración (solo ADMIN)
+                    // Botón Historial de Registros (solo ADMIN)
                     if (canManageEmployees) {
+                        OutlinedCard(
+                            onClick = { navigateWithAuth(onNavigateToAttendanceHistory) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(100.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.History,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Historial",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Fila 4: Configuración
+                if (canManageEmployees) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Botón Configuración (solo ADMIN)
                         OutlinedCard(
                             onClick = { navigateWithAuth(onNavigateToSettings) },
                             modifier = Modifier

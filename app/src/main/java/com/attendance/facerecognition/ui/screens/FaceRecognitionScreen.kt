@@ -6,7 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +30,6 @@ import java.util.*
 @Composable
 fun FaceRecognitionScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToBiometric: (AttendanceType) -> Unit = {},
     viewModel: FaceRecognitionViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -40,6 +39,10 @@ fun FaceRecognitionScreen(
     var isScanning by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     var successMessage by remember { mutableStateOf("") }
+    var showManualRegistrationDialog by remember { mutableStateOf(false) }
+    var manualEmployeeId by remember { mutableStateOf("") }
+    var manualEmployeeName by remember { mutableStateOf("") }
+    var manualRegistrationError by remember { mutableStateOf<String?>(null) }
 
     // Permiso de cámara
     val cameraPermissionState = rememberPermissionState(
@@ -98,7 +101,6 @@ fun FaceRecognitionScreen(
             } else {
                 // Pantalla de inicio
                 IdleScreen(
-                    onNavigateToBiometric = onNavigateToBiometric,
                     onStartScan = {
                         if (cameraPermissionState.status.isGranted) {
                             isScanning = true
@@ -175,16 +177,24 @@ fun FaceRecognitionScreen(
             title = { Text("No Reconocido") },
             text = {
                 Text(
-                    text = "No se pudo reconocer el rostro.\nConfianza: ${(confidence * 100).toInt()}%\n\nAsegúrate de estar registrado en el sistema.",
+                    text = "No se pudo reconocer el rostro.\nConfianza: ${(confidence * 100).toInt()}%\n\n¿Deseas crear un registro manual pendiente de aprobación?",
                     textAlign = TextAlign.Center
                 )
             },
             confirmButton = {
                 Button(onClick = {
+                    showManualRegistrationDialog = true
+                    viewModel.stopRecognition()
+                }) {
+                    Text("Registro Manual")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
                     viewModel.reset()
                     isScanning = false
                 }) {
-                    Text("Aceptar")
+                    Text("Cancelar")
                 }
             }
         )
@@ -224,13 +234,111 @@ fun FaceRecognitionScreen(
             }
         )
     }
+
+    // Diálogo de registro manual
+    if (showManualRegistrationDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showManualRegistrationDialog = false
+                manualEmployeeId = ""
+                manualEmployeeName = ""
+                manualRegistrationError = null
+                viewModel.reset()
+            },
+            icon = { Icon(Icons.Filled.PersonAdd, contentDescription = null) },
+            title = { Text("Registro Manual") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Ingresa tus datos para crear un registro pendiente de aprobación por un supervisor:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    OutlinedTextField(
+                        value = manualEmployeeId,
+                        onValueChange = { manualEmployeeId = it },
+                        label = { Text("ID Empleado") },
+                        placeholder = { Text("12345") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = manualEmployeeName,
+                        onValueChange = { manualEmployeeName = it },
+                        label = { Text("Nombre Completo") },
+                        placeholder = { Text("Juan Pérez") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    manualRegistrationError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (manualEmployeeId.isBlank() || manualEmployeeName.isBlank()) {
+                            manualRegistrationError = "Debes completar todos los campos"
+                            return@Button
+                        }
+
+                        viewModel.createManualRegistration(
+                            employeeId = manualEmployeeId,
+                            employeeName = manualEmployeeName,
+                            onSuccess = {
+                                showManualRegistrationDialog = false
+                                manualEmployeeId = ""
+                                manualEmployeeName = ""
+                                manualRegistrationError = null
+                                viewModel.reset()
+
+                                // Mostrar mensaje de éxito
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Registro creado. Pendiente de aprobación.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+
+                                onNavigateBack()
+                            },
+                            onError = { error ->
+                                manualRegistrationError = error
+                            }
+                        )
+                    },
+                    enabled = manualEmployeeId.isNotBlank() && manualEmployeeName.isNotBlank()
+                ) {
+                    Text("Crear Registro")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showManualRegistrationDialog = false
+                    manualEmployeeId = ""
+                    manualEmployeeName = ""
+                    manualRegistrationError = null
+                    viewModel.reset()
+                }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun IdleScreen(
     onStartScan: () -> Unit,
     onNavigateBack: () -> Unit,
-    onNavigateToBiometric: (AttendanceType) -> Unit,
     viewModel: FaceRecognitionViewModel
 ) {
     val selectedType by viewModel.selectedType.collectAsState()
@@ -393,21 +501,6 @@ private fun IdleScreen(
             Icon(Icons.Filled.Face, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("Reconocimiento Facial")
-        }
-
-        // Botón alternativo: Huella Digital
-        OutlinedButton(
-            onClick = {
-                selectedType?.let { type ->
-                    onNavigateToBiometric(type)
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = selectedType != null
-        ) {
-            Icon(Icons.Filled.Fingerprint, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Usar Huella Digital")
         }
 
         OutlinedButton(

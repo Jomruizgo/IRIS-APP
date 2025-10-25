@@ -8,6 +8,7 @@ import com.attendance.facerecognition.data.local.database.AppDatabase
 import com.attendance.facerecognition.data.local.entities.DeviceRegistration
 import com.attendance.facerecognition.device.DeviceManager
 import com.attendance.facerecognition.network.ConnectivityObserver
+import com.attendance.facerecognition.tenant.TenantManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +20,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionManager = SessionManager(application)
     private val connectivityObserver = ConnectivityObserver(application)
     private val deviceManager = DeviceManager(application)
+    private val tenantManager = TenantManager(application)
 
     private val _currentUsername = MutableStateFlow<String?>(null)
     val currentUsername: StateFlow<String?> = _currentUsername.asStateFlow()
@@ -44,11 +46,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _deviceRegistration = MutableStateFlow<DeviceRegistration?>(null)
     val deviceRegistration: StateFlow<DeviceRegistration?> = _deviceRegistration.asStateFlow()
 
+    private val _tenantCode = MutableStateFlow<String?>(null)
+    val tenantCode: StateFlow<String?> = _tenantCode.asStateFlow()
+
     init {
         loadUserInfo()
         loadStatistics()
         observeNetworkStatus()
         observeDeviceRegistration()
+        observeTenantCode()
     }
 
     /**
@@ -96,10 +102,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            // Actualizar contador de registros pendientes periódicamente
-            while (true) {
-                _pendingRecordsCount.value = database.attendanceDao().getUnsyncedRecordCount()
-                kotlinx.coroutines.delay(5000) // Actualizar cada 5 segundos
+            // Observar contador de registros pendientes de aprobación
+            database.pendingAttendanceDao().getPendingCount().collect { count ->
+                _pendingRecordsCount.value = count
             }
         }
     }
@@ -122,6 +127,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             deviceManager.observeDeviceRegistration().collect { device ->
                 _deviceRegistration.value = device
+            }
+        }
+    }
+
+    /**
+     * Observa el código de tenant configurado
+     */
+    private fun observeTenantCode() {
+        viewModelScope.launch {
+            tenantManager.tenantCode.collect { code: String? ->
+                _tenantCode.value = code
             }
         }
     }

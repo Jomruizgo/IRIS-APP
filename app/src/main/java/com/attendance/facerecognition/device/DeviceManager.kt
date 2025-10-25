@@ -8,6 +8,7 @@ import com.attendance.facerecognition.data.local.entities.SyncStatusType
 import com.attendance.facerecognition.data.repository.DeviceRegistrationRepository
 import com.attendance.facerecognition.network.RetrofitClient
 import com.attendance.facerecognition.network.dto.DeviceRegistrationRequest
+import com.attendance.facerecognition.tenant.TenantManager
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -19,6 +20,7 @@ class DeviceManager(private val context: Context) {
 
     private val database = AppDatabase.getDatabase(context)
     private val repository = DeviceRegistrationRepository(database.deviceRegistrationDao())
+    private val tenantManager = TenantManager(context)
 
     /**
      * Verifica si el dispositivo está registrado
@@ -157,6 +159,15 @@ class DeviceManager(private val context: Context) {
                         )
 
                         repository.registerDevice(device)
+
+                        // Guardar tenant code en TenantManager para incluirlo en headers HTTP
+                        // TODO: Obtener nombre del tenant desde la respuesta cuando el backend lo incluya
+                        tenantManager.setTenant(
+                            code = responseData.tenantId,
+                            name = responseData.tenantId, // Usar ID como nombre por ahora
+                            serverUrl = "" // URL ya está configurada en SettingsManager
+                        )
+
                         return DeviceRegistrationResult.Success(device)
                     } else {
                         return DeviceRegistrationResult.Error("Respuesta inválida del servidor")

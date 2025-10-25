@@ -14,7 +14,18 @@ data class User(
     val role: UserRole,
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
-    val lastLogin: Long? = null
+    val lastLogin: Long? = null,
+
+    // Autenticación biométrica (solo para ADMIN)
+    // Permite usar huella digital para autorizar operaciones críticas
+    val hasFingerprintEnabled: Boolean = false,
+
+    // Alias de la clave en Android KeyStore asociada a la huella del usuario
+    // Solo tiene valor si hasFingerprintEnabled = true
+    // Esta clave solo puede desbloquearse con una huella válida del dispositivo
+    // NOTA: Debido a limitaciones de Android, cualquier huella registrada en el dispositivo
+    // puede desbloquear esta clave. Por eso solo se usa para ADMIN (2-3 personas máximo).
+    val fingerprintKeystoreAlias: String? = null
 )
 
 enum class UserRole {

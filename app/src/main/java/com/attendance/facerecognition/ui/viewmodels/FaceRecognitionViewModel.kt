@@ -10,9 +10,15 @@ import com.attendance.facerecognition.data.local.entities.AttendanceRecord
 import com.attendance.facerecognition.data.local.entities.AttendanceType
 import com.attendance.facerecognition.data.local.entities.AuditAction
 import com.attendance.facerecognition.data.local.entities.Employee
+import com.attendance.facerecognition.data.local.entities.PendingAttendanceRecord
+import com.attendance.facerecognition.data.local.entities.PendingReason
 import com.attendance.facerecognition.data.repository.AttendanceAuditRepository
 import com.attendance.facerecognition.data.repository.AttendanceRepository
 import com.attendance.facerecognition.data.repository.EmployeeRepository
+import com.attendance.facerecognition.data.repository.PendingAttendanceRepository
+import com.attendance.facerecognition.device.DeviceManager
+import java.io.File
+import java.io.FileOutputStream
 import com.google.gson.Gson
 import com.attendance.facerecognition.ml.DetectedFace
 import com.attendance.facerecognition.ml.FaceDetector
@@ -31,6 +37,8 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     private val employeeRepository = EmployeeRepository(database.employeeDao())
     private val attendanceRepository = AttendanceRepository(database.attendanceDao())
     private val auditRepository = AttendanceAuditRepository(database.attendanceAuditDao())
+    private val pendingRepository = PendingAttendanceRepository(database.pendingAttendanceDao())
+    private val deviceManager = DeviceManager(application)
     private val faceDetector = FaceDetector()
     private val faceRecognizer = FaceRecognizer(application)
     private val livenessDetector = LivenessDetector()
@@ -49,6 +57,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     private var livenessVerified = false
     private var allEmployees: List<Employee> = emptyList()
     private var lastInsertedRecordId: Long? = null
+    private var lastCapturedFrame: Bitmap? = null  // Guardar último frame para registro manual
 
     // Umbral de confianza para reconocimiento
     private val confidenceThreshold = 0.85f
@@ -194,6 +203,8 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
                 // Registrar asistencia
                 registerAttendance(bestMatch, bestConfidence)
             } else {
+                // Guardar frame para posible registro manual
+                lastCapturedFrame = frame.copy(frame.config, true)
                 _uiState.value = RecognitionUiState.NotRecognized(bestConfidence)
             }
 
@@ -347,10 +358,79 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    /**
+     * Crea un registro manual pendiente de aprobación cuando falla el reconocimiento facial
+     */
+    fun createManualRegistration(employeeId: String, employeeName: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val selectedType = _selectedType.value
+                if (selectedType == null) {
+                    onError("No se ha seleccionado tipo de registro")
+                    return@launch
+                }
+
+                val frame = lastCapturedFrame
+                if (frame == null) {
+                    onError("No se ha capturado imagen")
+                    return@launch
+                }
+
+                // Guardar foto en storage interno
+                val photoPath = savePhotoToStorage(frame)
+
+                // Obtener device ID
+                val deviceId = deviceManager.getDeviceId() ?: "unknown"
+
+                // Crear registro pendiente
+                val pendingRecord = PendingAttendanceRecord(
+                    employeeId = employeeId,
+                    employeeName = employeeName,
+                    timestamp = System.currentTimeMillis(),
+                    type = selectedType,
+                    photoPath = photoPath,
+                    deviceId = deviceId,
+                    reason = PendingReason.FACIAL_FAILED
+                )
+
+                // Guardar en base de datos
+                pendingRepository.insertPending(pendingRecord)
+
+                onSuccess()
+
+            } catch (e: Exception) {
+                onError("Error al crear registro manual: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Guarda el bitmap como archivo JPEG en storage interno
+     * Retorna la ruta del archivo guardado
+     */
+    private fun savePhotoToStorage(bitmap: Bitmap): String {
+        val context = getApplication<Application>()
+        val photosDir = File(context.filesDir, "pending_photos")
+        if (!photosDir.exists()) {
+            photosDir.mkdirs()
+        }
+
+        val timestamp = System.currentTimeMillis()
+        val photoFile = File(photosDir, "pending_$timestamp.jpg")
+
+        FileOutputStream(photoFile).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+
+        return photoFile.absolutePath
+    }
+
     override fun onCleared() {
         super.onCleared()
         faceDetector.close()
         faceRecognizer.close()
+        lastCapturedFrame?.recycle()
+        lastCapturedFrame = null
     }
 }
 

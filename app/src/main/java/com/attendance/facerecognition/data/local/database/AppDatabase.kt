@@ -5,15 +5,21 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.attendance.facerecognition.data.local.dao.AttendanceAuditDao
 import com.attendance.facerecognition.data.local.dao.AttendanceDao
 import com.attendance.facerecognition.data.local.dao.DeviceRegistrationDao
 import com.attendance.facerecognition.data.local.dao.EmployeeDao
+import com.attendance.facerecognition.data.local.dao.PendingAttendanceDao
 import com.attendance.facerecognition.data.local.entities.AttendanceAudit
 import com.attendance.facerecognition.data.local.entities.AttendanceRecord
 import com.attendance.facerecognition.data.local.entities.DeviceRegistration
 import com.attendance.facerecognition.data.local.entities.Employee
 import com.attendance.facerecognition.data.local.entities.FloatListConverter
+import com.attendance.facerecognition.data.local.entities.PendingAttendanceRecord
+import com.attendance.facerecognition.data.local.entities.PendingReasonConverter
+import com.attendance.facerecognition.data.local.entities.PendingStatusConverter
 import com.attendance.facerecognition.data.local.entities.SyncStatusTypeConverter
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
@@ -23,15 +29,18 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         AttendanceRecord::class,
         AttendanceAudit::class,
         com.attendance.facerecognition.data.local.entities.User::class,
-        DeviceRegistration::class
+        DeviceRegistration::class,
+        PendingAttendanceRecord::class
     ],
-    version = 9,
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(
     FloatListConverter::class,
     com.attendance.facerecognition.data.local.entities.AuditActionConverter::class,
-    SyncStatusTypeConverter::class
+    SyncStatusTypeConverter::class,
+    PendingReasonConverter::class,
+    PendingStatusConverter::class
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -40,8 +49,69 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun attendanceAuditDao(): AttendanceAuditDao
     abstract fun userDao(): com.attendance.facerecognition.data.local.dao.UserDao
     abstract fun deviceRegistrationDao(): DeviceRegistrationDao
+    abstract fun pendingAttendanceDao(): PendingAttendanceDao
 
     companion object {
+        // Migración de versión 10 a 11
+        // Agrega tabla pending_attendance_records
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS pending_attendance_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        employeeId TEXT NOT NULL,
+                        employeeName TEXT,
+                        timestamp INTEGER NOT NULL,
+                        type TEXT NOT NULL,
+                        photoPath TEXT NOT NULL,
+                        deviceId TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'PENDING',
+                        reviewedBy INTEGER,
+                        reviewedAt INTEGER,
+                        reviewNotes TEXT,
+                        createdAt INTEGER NOT NULL
+                    )
+                """)
+            }
+        }
+
+        // Migración de versión 9 a 10
+        // Agrega campos de huella a User y los remueve de Employee
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 1. Agregar columnas de huella a users
+                database.execSQL("ALTER TABLE users ADD COLUMN hasFingerprintEnabled INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE users ADD COLUMN fingerprintKeystoreAlias TEXT")
+
+                // 2. Remover columnas de employees
+                // SQLite no soporta DROP COLUMN directamente, hay que recrear la tabla
+                database.execSQL("""
+                    CREATE TABLE employees_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        employeeId TEXT NOT NULL,
+                        fullName TEXT NOT NULL,
+                        department TEXT NOT NULL,
+                        position TEXT NOT NULL,
+                        faceEmbeddings TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        isActive INTEGER NOT NULL DEFAULT 1
+                    )
+                """)
+
+                // Copiar datos (sin las columnas de huella que ya no existen)
+                database.execSQL("""
+                    INSERT INTO employees_new (id, employeeId, fullName, department, position, faceEmbeddings, createdAt, isActive)
+                    SELECT id, employeeId, fullName, department, position, faceEmbeddings, createdAt, isActive
+                    FROM employees
+                """)
+
+                // Eliminar tabla vieja y renombrar
+                database.execSQL("DROP TABLE employees")
+                database.execSQL("ALTER TABLE employees_new RENAME TO employees")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -108,7 +178,8 @@ abstract class AppDatabase : RoomDatabase() {
                     DATABASE_NAME
                 )
                     .openHelperFactory(factory)
-                    .fallbackToDestructiveMigration() // Solo para desarrollo
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11) // Migraciones seguras
+                    .fallbackToDestructiveMigrationOnDowngrade() // Solo borra si downgrade
                     .build()
 
                 INSTANCE = instance

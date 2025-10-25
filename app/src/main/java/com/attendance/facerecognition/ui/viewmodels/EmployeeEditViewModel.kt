@@ -44,7 +44,6 @@ class EmployeeEditViewModel(application: Application) : AndroidViewModel(applica
         department: String,
         position: String,
         isActive: Boolean,
-        hasFingerprintEnabled: Boolean,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
@@ -62,8 +61,7 @@ class EmployeeEditViewModel(application: Application) : AndroidViewModel(applica
                         fullName = fullName.trim(),
                         department = department.trim(),
                         position = position.trim(),
-                        isActive = isActive,
-                        hasFingerprintEnabled = hasFingerprintEnabled
+                        isActive = isActive
                     )
 
                     employeeRepository.updateEmployee(updatedEmployee)
@@ -75,33 +73,6 @@ class EmployeeEditViewModel(application: Application) : AndroidViewModel(applica
                 onError(e.message ?: "Error desconocido")
             } finally {
                 _isSaving.value = false
-            }
-        }
-    }
-
-    /**
-     * Actualiza el alias de KeyStore para la huella del empleado
-     */
-    fun updateFingerprintAlias(
-        keystoreAlias: String,
-        onSuccess: () -> Unit,
-        onError: (String) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                _employee.value?.let { emp ->
-                    val updatedEmployee = emp.copy(
-                        fingerprintKeystoreAlias = keystoreAlias,
-                        hasFingerprintEnabled = true
-                    )
-
-                    employeeRepository.updateEmployee(updatedEmployee)
-                    _employee.value = updatedEmployee
-
-                    onSuccess()
-                }
-            } catch (e: Exception) {
-                onError(e.message ?: "Error al actualizar huella")
             }
         }
     }

@@ -26,12 +26,15 @@ fun SettingsScreen(
     val attendanceRetentionDays by viewModel.attendanceRetentionDays.collectAsState(initial = 90)
     val auditRetentionDays by viewModel.auditRetentionDays.collectAsState(initial = 180)
     val serverUrl by viewModel.serverUrl.collectAsState(initial = "")
+    val tenantCode by viewModel.tenantCode.collectAsState(initial = "")
     val cleanupResult by viewModel.cleanupResult.collectAsState()
 
     var showCleanupDialog by remember { mutableStateOf(false) }
     var showResultDialog by remember { mutableStateOf(false) }
     var showServerUrlDialog by remember { mutableStateOf(false) }
+    var showTenantCodeDialog by remember { mutableStateOf(false) }
     var editingServerUrl by remember { mutableStateOf("") }
+    var editingTenantCode by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -258,6 +261,68 @@ fun SettingsScreen(
                 }
             }
 
+            // Tenant Code
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Código de Tenant (Multi-Tenancy)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Text(
+                        text = "Identificador único de la organización para sincronización en la nube",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+
+                    Text(
+                        text = tenantCode.ifEmpty { "No configurado" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                editingTenantCode = tenantCode
+                                showTenantCodeDialog = true
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Modificar")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.clearTenantCode()
+                                Toast.makeText(
+                                    context,
+                                    "Código de tenant eliminado",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = tenantCode.isNotEmpty()
+                        ) {
+                            Text("Limpiar")
+                        }
+                    }
+                }
+            }
+
             // Botón de limpieza manual
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -444,6 +509,65 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showServerUrlDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Diálogo para editar Tenant Code
+    if (showTenantCodeDialog) {
+        AlertDialog(
+            onDismissRequest = { showTenantCodeDialog = false },
+            title = { Text("Configurar Código de Tenant") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Ingresa el código único de tu organización proporcionado por el administrador del sistema",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    OutlinedTextField(
+                        value = editingTenantCode,
+                        onValueChange = { editingTenantCode = it.trim().uppercase() },
+                        label = { Text("Código de Tenant") },
+                        placeholder = { Text("EMPRESA-001") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Text(
+                        text = "Ejemplo: EMPRESA-001, ORG-ABC, CLIENTE-XYZ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = "⚠️ IMPORTANTE: Todos los datos sincronizados estarán asociados a este código. No lo cambies sin autorización del administrador.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateTenantCode(editingTenantCode)
+                        showTenantCodeDialog = false
+                        Toast.makeText(
+                            context,
+                            "Código de tenant actualizado",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    enabled = editingTenantCode.trim().isNotEmpty()
+                ) {
+                    Text("Guardar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTenantCodeDialog = false }) {
                     Text("Cancelar")
                 }
             }

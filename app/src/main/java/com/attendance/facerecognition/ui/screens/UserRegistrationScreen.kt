@@ -36,6 +36,8 @@ fun UserRegistrationScreen(
     var isConfirmingPin by remember { mutableStateOf(false) }
 
     var showSuccessDialog by remember { mutableStateOf(false) }
+    var showFingerprintEnrollment by remember { mutableStateOf(false) }
+    var registeredUserId by remember { mutableStateOf<Long?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -251,7 +253,8 @@ fun UserRegistrationScreen(
                                 fullName = fullName,
                                 pin = pin,
                                 role = selectedRole,
-                                onSuccess = {
+                                onSuccess = { userId ->
+                                    registeredUserId = userId
                                     showSuccessDialog = true
                                 },
                                 onError = { error ->
@@ -286,17 +289,84 @@ fun UserRegistrationScreen(
                         text = "Rol asignado: ${selectedRole.name}",
                         fontWeight = FontWeight.Bold
                     )
+
+                    if (selectedRole == UserRole.ADMIN) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.Fingerprint,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    "¿Deseas registrar huella digital para autorizar operaciones críticas?",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        showSuccessDialog = false
-                        onNavigateBack()
+                if (selectedRole == UserRole.ADMIN) {
+                    Button(
+                        onClick = {
+                            showSuccessDialog = false
+                            showFingerprintEnrollment = true
+                        }
+                    ) {
+                        Icon(Icons.Filled.Fingerprint, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Registrar Huella")
                     }
-                ) {
-                    Text("Aceptar")
+                } else {
+                    Button(
+                        onClick = {
+                            showSuccessDialog = false
+                            onNavigateBack()
+                        }
+                    ) {
+                        Text("Aceptar")
+                    }
                 }
+            },
+            dismissButton = {
+                if (selectedRole == UserRole.ADMIN) {
+                    TextButton(
+                        onClick = {
+                            showSuccessDialog = false
+                            onNavigateBack()
+                        }
+                    ) {
+                        Text("Omitir")
+                    }
+                }
+            }
+        )
+    }
+
+    // Diálogo de registro de huella
+    if (showFingerprintEnrollment && registeredUserId != null) {
+        UserFingerprintEnrollmentDialog(
+            userId = registeredUserId!!,
+            username = username,
+            onSuccess = { keystoreAlias ->
+                viewModel.updateUserFingerprint(registeredUserId!!, keystoreAlias)
+                showFingerprintEnrollment = false
+                onNavigateBack()
+            },
+            onDismiss = {
+                showFingerprintEnrollment = false
+                onNavigateBack()
             }
         )
     }

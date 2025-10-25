@@ -28,7 +28,7 @@ class UserRegistrationViewModel(application: Application) : AndroidViewModel(app
         fullName: String,
         pin: String,
         role: UserRole,
-        onSuccess: () -> Unit,
+        onSuccess: (userId: Long) -> Unit,
         onError: (String) -> Unit
     ) {
         // Validaciones
@@ -76,13 +76,34 @@ class UserRegistrationViewModel(application: Application) : AndroidViewModel(app
                     createdAt = System.currentTimeMillis()
                 )
 
-                userRepository.insertUser(user)
-                onSuccess()
+                val userId = userRepository.insertUser(user)
+                onSuccess(userId)
 
             } catch (e: Exception) {
                 onError(e.message ?: "Error al registrar usuario")
             } finally {
                 _isRegistering.value = false
+            }
+        }
+    }
+
+    /**
+     * Actualiza la huella digital de un usuario
+     */
+    fun updateUserFingerprint(userId: Long, keystoreAlias: String) {
+        viewModelScope.launch {
+            try {
+                val user = userRepository.getUserById(userId)
+                if (user != null) {
+                    val updatedUser = user.copy(
+                        hasFingerprintEnabled = true,
+                        fingerprintKeystoreAlias = keystoreAlias
+                    )
+                    userRepository.updateUser(updatedUser)
+                }
+            } catch (e: Exception) {
+                // Error silencioso, no crítico
+                e.printStackTrace()
             }
         }
     }

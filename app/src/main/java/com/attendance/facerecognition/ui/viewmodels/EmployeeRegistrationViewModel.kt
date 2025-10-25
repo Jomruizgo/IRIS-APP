@@ -149,17 +149,14 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
         name: String,
         employeeId: String,
         department: String,
-        position: String,
-        hasFingerprintEnabled: Boolean = false
+        position: String
     ) {
         val hasPhotos = _capturedPhotos.value.size >= minPhotoCount
 
-        // Validar que haya al menos UN método biométrico
-        if (!hasPhotos && !hasFingerprintEnabled) {
+        // Validar que tenga fotos faciales
+        if (!hasPhotos) {
             _uiState.value = RegistrationUiState.Error(
-                "Debe registrar al menos un método de autenticación:\n" +
-                "• Captura facial (7-10 fotos), o\n" +
-                "• Huella dactilar"
+                "Debe capturar al menos $minPhotoCount fotos del rostro"
             )
             return
         }
@@ -170,7 +167,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                     _uiState.value = RegistrationUiState.RegisteringEmployee
                 }
 
-                android.util.Log.d("EmployeeRegistration", "Starting registration for: $name (hasPhotos=$hasPhotos, hasFingerprint=$hasFingerprintEnabled)")
+                android.util.Log.d("EmployeeRegistration", "Starting registration for: $name (hasPhotos=$hasPhotos)")
 
                 // Verificar si el empleado ya existe
                 android.util.Log.d("EmployeeRegistration", "Checking if employee $employeeId already exists...")
@@ -213,8 +210,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                     fullName = name,
                     department = department,
                     position = position,
-                    faceEmbeddings = embeddings,
-                    hasFingerprintEnabled = hasFingerprintEnabled
+                    faceEmbeddings = embeddings
                 )
 
                 android.util.Log.d("EmployeeRegistration", "Saving employee to database")
@@ -325,11 +321,10 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
                             try {
                                 val employee = repository.getEmployeeById(dbId)
                                 if (employee != null) {
-                                    val updatedEmployee = employee.copy(
-                                        fingerprintKeystoreAlias = keystoreAlias
-                                    )
-                                    repository.updateEmployee(updatedEmployee)
-                                    onSuccess()
+                                    // NOTA: La autenticación con huella para empleados ha sido removida
+                                    // Este código solo permanece para evitar errores de compilación
+                                    // pero enrollFingerprint() no debería ser llamado
+                                    onError("La autenticación con huella para empleados ya no está disponible")
                                 } else {
                                     onError("No se encontró el empleado")
                                 }
