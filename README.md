@@ -78,7 +78,7 @@ View (Compose) ← ViewModel ← Repository ← Room Database
 
 ### Requisitos
 - Android Studio Hedgehog o superior
-- JDK 17
+- JDK 21
 - Android SDK 34
 - Dispositivo físico con cámara
 

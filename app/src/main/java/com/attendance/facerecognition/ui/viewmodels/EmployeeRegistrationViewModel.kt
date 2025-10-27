@@ -40,6 +40,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
     private val minPhotoCount = 7
 
     private var isProcessing = false
+    private var isPaused = false  // Pausar completamente cuando hay error
     private var lastCaptureTime = 0L
     private var currentRegisteredEmployeeId: Long? = null
 
@@ -47,6 +48,9 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
      * Procesa un frame de la cámara para detectar y capturar rostro
      */
     fun processFrame(frame: Bitmap) {
+        // No procesar si está pausado (hay un error visible)
+        if (isPaused) return
+
         // No procesar si ya tenemos suficientes fotos
         if (_photoCount.value >= targetPhotoCount) {
             if (_uiState.value !is RegistrationUiState.AllPhotosCaptured) {
@@ -64,6 +68,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
         val currentState = _uiState.value
         if (currentState is RegistrationUiState.Error ||
             currentState is RegistrationUiState.RegistrationSuccess) {
+            isPaused = true  // Pausar permanentemente hasta que se reinicie
             return
         }
 
@@ -244,6 +249,7 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
         _photoCount.value = 0
         _uiState.value = RegistrationUiState.Idle
         isProcessing = false
+        isPaused = false  // Reanudar procesamiento
         lastCaptureTime = 0L
     }
 
@@ -253,18 +259,37 @@ class EmployeeRegistrationViewModel(application: Application) : AndroidViewModel
     fun startCapture() {
         _uiState.value = RegistrationUiState.ReadyToCapture
         isProcessing = false
+        isPaused = false  // Reanudar procesamiento
         lastCaptureTime = 0L
     }
 
     /**
+     * Valida que el ID del empleado no exista antes de comenzar la captura
+     */
+    suspend fun validateEmployeeId(employeeId: String): Boolean {
+        return !repository.employeeExists(employeeId)
+    }
+
+    /**
+     * Muestra un mensaje de error
+     */
+    fun showError(message: String) {
+        _uiState.value = RegistrationUiState.Error(message)
+    }
+
+    /**
      * Determina el ángulo requerido según el número de foto
+     * IMPORTANTE: Por efecto espejo de cámara frontal:
+     * - Usuario gira a SU IZQUIERDA → cámara ve "right" (ángulo positivo)
+     * - Usuario gira a SU DERECHA → cámara ve "left" (ángulo negativo)
+     *
      * @return "front", "left", o "right"
      */
     private fun getRequiredAngleForPhoto(photoCount: Int): String {
         return when (photoCount) {
             in 0..2 -> "front"      // Fotos 1-3: De frente
-            in 3..5 -> "left"       // Fotos 4-6: Girar a la izquierda
-            in 6..8 -> "right"      // Fotos 7-9: Girar a la derecha
+            in 3..5 -> "left"       // Fotos 4-6: Usuario gira a SU DERECHA → cámara ve left (negativo)
+            in 6..8 -> "right"      // Fotos 7-9: Usuario gira a SU IZQUIERDA → cámara ve right (positivo)
             9 -> "front"            // Foto 10: De frente
             else -> "front"
         }

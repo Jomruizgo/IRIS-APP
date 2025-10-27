@@ -30,6 +30,7 @@ fun PendingApprovalScreen(
     onNavigateBack: () -> Unit,
     viewModel: PendingApprovalViewModel = viewModel()
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val pendingRecords by viewModel.pendingRecords.collectAsState(initial = emptyList())
     val pendingCount by viewModel.pendingCount.collectAsState(initial = 0)
 
@@ -134,8 +135,21 @@ fun PendingApprovalScreen(
                             viewModel.approveRecord(
                                 record = selectedRecord!!,
                                 supervisorId = 1L, // TODO: Obtener del SessionManager
-                                onSuccess = { selectedRecord = null },
-                                onError = { /* Mostrar error */ }
+                                onSuccess = {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Registro aprobado exitosamente",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                    selectedRecord = null
+                                },
+                                onError = { error ->
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Error: $error",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             )
                         }
                         showAdminAuth = true
@@ -184,8 +198,21 @@ fun PendingApprovalScreen(
                                     record = selectedRecord!!,
                                     supervisorId = 1L,
                                     notes = rejectNotes,
-                                    onSuccess = { selectedRecord = null },
-                                    onError = { /* Mostrar error */ }
+                                    onSuccess = {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Registro rechazado",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                        selectedRecord = null
+                                    },
+                                    onError = { error ->
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Error: $error",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    }
                                 )
                             }
                             showAdminAuth = true
@@ -208,15 +235,18 @@ fun PendingApprovalScreen(
 
     // Autenticación administrativa
     if (showAdminAuth && actionToPerform != null) {
+        android.util.Log.d("PendingApprovalScreen", "Mostrando AdminBiometricPrompt")
         AdminBiometricPrompt(
             title = "Autorizar Acción",
             message = "Confirma tu identidad para procesar este registro",
             onSuccess = {
+                android.util.Log.d("PendingApprovalScreen", "onSuccess() llamado, ejecutando actionToPerform")
                 actionToPerform?.invoke()
                 showAdminAuth = false
                 actionToPerform = null
             },
             onDismiss = {
+                android.util.Log.d("PendingApprovalScreen", "onDismiss() llamado")
                 showAdminAuth = false
                 actionToPerform = null
             }

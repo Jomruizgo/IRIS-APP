@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.attendance.facerecognition.data.local.database.AppDatabase
 import com.attendance.facerecognition.data.local.entities.AttendanceRecord
+import com.attendance.facerecognition.data.local.entities.AttendanceType
 import com.attendance.facerecognition.data.local.entities.PendingAttendanceRecord
 import com.attendance.facerecognition.data.local.entities.PendingStatus
 import com.attendance.facerecognition.data.repository.AttendanceRepository
@@ -36,17 +37,48 @@ class PendingApprovalViewModel(application: Application) : AndroidViewModel(appl
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
+        android.util.Log.d("PendingApprovalVM", "approveRecord() llamado para registro ID: ${record.id}")
         viewModelScope.launch {
             try {
                 _uiState.value = ApprovalUiState.Processing
+                android.util.Log.d("PendingApprovalVM", "Estado: Processing")
 
-                // 1. Marcar como aprobado
+                // 1. Buscar el empleado por su ID
+                android.util.Log.d("PendingApprovalVM", "Buscando empleado con ID: ${record.employeeId}")
+                val employeeRepository = com.attendance.facerecognition.data.repository.EmployeeRepository(
+                    database.employeeDao()
+                )
+                val employee = employeeRepository.getEmployeeByEmployeeId(record.employeeId)
+
+                if (employee == null) {
+                    android.util.Log.e("PendingApprovalVM", "Empleado no encontrado: ${record.employeeId}")
+                    throw Exception("No se puede aprobar: El empleado con ID ${record.employeeId} no está registrado en el sistema. Debe registrarlo primero.")
+                }
+
+                android.util.Log.d("PendingApprovalVM", "Empleado encontrado: ${employee.fullName} (DB ID: ${employee.id})")
+
+                // 2. Validar que no sea entrada/salida consecutiva
+                android.util.Log.d("PendingApprovalVM", "Validando entrada/salida consecutivas...")
+                val lastRecord = attendanceRepository.getLastRecordForEmployee(employee.id)
+
+                if (lastRecord != null && lastRecord.type == record.type) {
+                    val typeText = when (record.type) {
+                        AttendanceType.ENTRY -> "entrada"
+                        AttendanceType.EXIT -> "salida"
+                    }
+                    android.util.Log.w("PendingApprovalVM", "Intento de $typeText consecutiva detectado")
+                    throw Exception("No se puede registrar $typeText consecutiva. El último registro del empleado ya fue una $typeText.")
+                }
+
+                // 3. Marcar como aprobado
+                android.util.Log.d("PendingApprovalVM", "Marcando registro como aprobado...")
                 pendingRepository.approveRecord(record.id, supervisorId, notes)
 
-                // 2. Crear registro real de asistencia
+                // 4. Crear registro real de asistencia
+                android.util.Log.d("PendingApprovalVM", "Creando registro de asistencia...")
                 val attendanceRecord = AttendanceRecord(
-                    employeeId = 0L, // Se llenará si existe el empleado
-                    employeeName = record.employeeName ?: "Desconocido",
+                    employeeId = employee.id, // ID real del empleado en la BD
+                    employeeName = employee.fullName,
                     employeeIdNumber = record.employeeId,
                     timestamp = record.timestamp,
                     type = record.type,
@@ -57,11 +89,14 @@ class PendingApprovalViewModel(application: Application) : AndroidViewModel(appl
                 )
 
                 attendanceRepository.insertRecord(attendanceRecord)
+                android.util.Log.d("PendingApprovalVM", "Registro insertado exitosamente")
 
                 _uiState.value = ApprovalUiState.Success("Registro aprobado exitosamente")
+                android.util.Log.d("PendingApprovalVM", "Ejecutando onSuccess()")
                 onSuccess()
 
             } catch (e: Exception) {
+                android.util.Log.e("PendingApprovalVM", "Error al aprobar registro", e)
                 _uiState.value = ApprovalUiState.Error(e.message ?: "Error al aprobar")
                 onError(e.message ?: "Error desconocido")
             }

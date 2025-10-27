@@ -3,6 +3,7 @@ package com.attendance.facerecognition.data.repository
 import com.attendance.facerecognition.data.local.dao.UserDao
 import com.attendance.facerecognition.data.local.entities.User
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import java.security.MessageDigest
 
 class UserRepository(private val userDao: UserDao) {
@@ -41,6 +42,25 @@ class UserRepository(private val userDao: UserDao) {
             user
         } else {
             null
+        }
+    }
+
+    /**
+     * Verifica el PIN de un usuario (sin username, solo PIN)
+     * Busca entre todos los usuarios activos
+     */
+    suspend fun verifyUserByPin(pin: String): User? {
+        val pinHash = hashPin(pin)
+
+        // Usar first() para obtener el valor actual del Flow sin bloquear infinitamente
+        val users = userDao.getAllUsers().first()
+
+        val matchedUser = users.firstOrNull {
+            it.pinHash == pinHash && it.isActive
+        }
+
+        return matchedUser?.also {
+            updateLastLogin(it.id)
         }
     }
 

@@ -63,8 +63,8 @@ class LivenessDetector {
     fun getChallengeText(challenge: ChallengeType): String {
         return when (challenge) {
             ChallengeType.BLINK -> "Parpadea 2 veces"
-            ChallengeType.TURN_LEFT -> "Gira la cabeza a la IZQUIERDA"
-            ChallengeType.TURN_RIGHT -> "Gira la cabeza a la DERECHA"
+            ChallengeType.TURN_LEFT -> "Gira la cabeza a la DERECHA"
+            ChallengeType.TURN_RIGHT -> "Gira la cabeza a la IZQUIERDA"
         }
     }
 

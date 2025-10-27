@@ -54,6 +54,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     val selectedType: StateFlow<AttendanceType?> = _selectedType.asStateFlow()
 
     private var isProcessingFrame = false
+    private var isPaused = false  // Pausar completamente el procesamiento cuando hay error
     private var livenessVerified = false
     private var allEmployees: List<Employee> = emptyList()
     private var lastInsertedRecordId: Long? = null
@@ -107,6 +108,9 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
      * Procesa un frame de la cámara
      */
     fun processFrame(frame: Bitmap) {
+        // No procesar si está pausado (hay un error visible)
+        if (isPaused) return
+
         if (isProcessingFrame) return
 
         // No procesar frames si hay un error o validación pendiente
@@ -115,6 +119,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
             currentState is RecognitionUiState.ValidationError ||
             currentState is RecognitionUiState.NotRecognized ||
             currentState is RecognitionUiState.RecognitionSuccess) {
+            isPaused = true  // Pausar permanentemente hasta que se reinicie
             return
         }
 
@@ -305,6 +310,7 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
      * Reinicia el proceso de reconocimiento
      */
     fun reset() {
+        isPaused = false  // Reanudar procesamiento
         livenessVerified = false
         _currentChallenge.value = null
         _selectedType.value = null
@@ -361,6 +367,45 @@ class FaceRecognitionViewModel(application: Application) : AndroidViewModel(appl
     /**
      * Crea un registro manual pendiente de aprobación cuando falla el reconocimiento facial
      */
+    /**
+     * Establece el frame capturado manualmente para registro manual
+     */
+    fun setManualCapturedFrame(bitmap: Bitmap) {
+        lastCapturedFrame = bitmap
+    }
+
+    /**
+     * Crea un registro manual buscando al empleado por ID
+     */
+    fun createManualRegistrationById(employeeId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                // Buscar empleado por ID
+                val employee = employeeRepository.getEmployeeByEmployeeId(employeeId)
+                if (employee == null) {
+                    onError("No se encontró empleado con ID: $employeeId")
+                    return@launch
+                }
+
+                // Verificar que el empleado esté activo
+                if (!employee.isActive) {
+                    onError("El empleado ${employee.fullName} está inactivo")
+                    return@launch
+                }
+
+                // Usar el método existente con el nombre del empleado
+                createManualRegistration(
+                    employeeId = employeeId,
+                    employeeName = employee.fullName,
+                    onSuccess = onSuccess,
+                    onError = onError
+                )
+            } catch (e: Exception) {
+                onError("Error al buscar empleado: ${e.message}")
+            }
+        }
+    }
+
     fun createManualRegistration(employeeId: String, employeeName: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {

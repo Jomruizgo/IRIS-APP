@@ -39,10 +39,9 @@ fun FaceRecognitionScreen(
     var isScanning by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     var successMessage by remember { mutableStateOf("") }
-    var showManualRegistrationDialog by remember { mutableStateOf(false) }
-    var manualEmployeeId by remember { mutableStateOf("") }
-    var manualEmployeeName by remember { mutableStateOf("") }
-    var manualRegistrationError by remember { mutableStateOf<String?>(null) }
+    var isCapturingManualPhoto by remember { mutableStateOf(false) }
+    var manualEmployeeId by remember { mutableStateOf<String?>(null) }
+    var showManualDialog by remember { mutableStateOf(false) }
 
     // Permiso de cámara
     val cameraPermissionState = rememberPermissionState(
@@ -87,46 +86,131 @@ fun FaceRecognitionScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (isScanning && cameraPermissionState.status.isGranted) {
-                // Modo cámara con reconocimiento
-                ScanningScreen(
-                    viewModel = viewModel,
-                    uiState = uiState,
-                    currentChallenge = currentChallenge,
-                    onStopScan = {
-                        isScanning = false
-                        viewModel.stopRecognition()
-                    }
-                )
-            } else {
-                // Pantalla de inicio
-                IdleScreen(
-                    onStartScan = {
-                        if (cameraPermissionState.status.isGranted) {
-                            isScanning = true
-                            viewModel.startRecognition()
-                        } else {
-                            cameraPermissionState.launchPermissionRequest()
+            // NO detener isScanning aquí - se detendrá cuando el usuario cierre el diálogo
+
+            when {
+                isCapturingManualPhoto && cameraPermissionState.status.isGranted -> {
+                    // Modo captura de foto para registro manual
+                    ManualPhotoCaptureScreen(
+                        employeeId = manualEmployeeId ?: "",
+                        onPhotoCaptured = { bitmap ->
+                            // Guardar el frame y crear el registro
+                            viewModel.setManualCapturedFrame(bitmap)
+                            manualEmployeeId?.let { id ->
+                                viewModel.createManualRegistrationById(
+                                    employeeId = id,
+                                    onSuccess = {
+                                        isCapturingManualPhoto = false
+                                        manualEmployeeId = null
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Registro manual creado. Pendiente de aprobación.",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                        onNavigateBack()
+                                    },
+                                    onError = { error ->
+                                        isCapturingManualPhoto = false
+                                        manualEmployeeId = null
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Error: $error",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        },
+                        onCancel = {
+                            isCapturingManualPhoto = false
+                            manualEmployeeId = null
                         }
-                    },
-                    onNavigateBack = onNavigateBack,
-                    viewModel = viewModel
-                )
+                    )
+                }
+                isScanning && cameraPermissionState.status.isGranted -> {
+                    // Modo cámara con reconocimiento
+                    ScanningScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        currentChallenge = currentChallenge,
+                        isScanning = isScanning,
+                        onStopScan = {
+                            isScanning = false
+                            viewModel.stopRecognition()
+                        }
+                    )
+                }
+                else -> {
+                    // Pantalla de inicio
+                    IdleScreen(
+                        onStartScan = {
+                            if (cameraPermissionState.status.isGranted) {
+                                isScanning = true
+                                viewModel.startRecognition()
+                            } else {
+                                cameraPermissionState.launchPermissionRequest()
+                            }
+                        },
+                        onStartManualRegistration = {
+                            showManualDialog = true
+                        },
+                        onNavigateBack = onNavigateBack,
+                        viewModel = viewModel
+                    )
+                }
             }
         }
     }
 
-    // Diálogo de éxito
+    // Diálogo de registro manual (movido fuera de IdleScreen)
+    if (showManualDialog) {
+        val selectedType by viewModel.selectedType.collectAsState()
+        if (selectedType != null) {
+            ManualRegistrationDialog(
+                attendanceType = selectedType!!,
+                onDismiss = { showManualDialog = false },
+                onConfirm = { employeeId ->
+                    // Guardar ID y activar captura de foto
+                    manualEmployeeId = employeeId
+                    showManualDialog = false
+
+                    // Activar cámara para capturar foto
+                    if (cameraPermissionState.status.isGranted) {
+                        isCapturingManualPhoto = true
+                    } else {
+                        cameraPermissionState.launchPermissionRequest()
+                        // Después de obtener permiso, activar captura
+                        isCapturingManualPhoto = true
+                    }
+                }
+            )
+        }
+    }
+
+    // Diálogo de confirmación del reconocimiento
     if (showSuccessDialog) {
         AlertDialog(
             onDismissRequest = { },
-            icon = { Icon(Icons.Filled.CheckCircle, contentDescription = null) },
-            title = { Text("¡Asistencia Registrada!") },
+            icon = { Icon(Icons.Filled.Face, contentDescription = null) },
+            title = { Text("¿Eres tú?") },
             text = {
-                Text(
-                    text = successMessage,
-                    textAlign = TextAlign.Center
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = successMessage,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Confirma si la identificación es correcta",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             },
             confirmButton = {
                 Button(
@@ -135,7 +219,7 @@ fun FaceRecognitionScreen(
                         viewModel.reset()
                     }
                 ) {
-                    Text("✓ Correcto")
+                    Text("✓ Sí, soy yo")
                 }
             },
             dismissButton = {
@@ -146,7 +230,7 @@ fun FaceRecognitionScreen(
                         viewModel.reset()
                     }
                 ) {
-                    Text("✗ Este no soy yo")
+                    Text("✗ No soy yo")
                 }
             }
         )
@@ -156,12 +240,18 @@ fun FaceRecognitionScreen(
     if (uiState is RecognitionUiState.Error) {
         val errorMessage = (uiState as RecognitionUiState.Error).message
         AlertDialog(
-            onDismissRequest = { viewModel.reset() },
-            icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) },
+            onDismissRequest = {
+                isScanning = false
+                viewModel.reset()
+            },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
             title = { Text("Error") },
             text = { Text(errorMessage) },
             confirmButton = {
-                Button(onClick = { viewModel.reset() }) {
+                Button(onClick = {
+                    isScanning = false
+                    viewModel.reset()
+                }) {
                     Text("Aceptar")
                 }
             }
@@ -172,21 +262,24 @@ fun FaceRecognitionScreen(
     if (uiState is RecognitionUiState.NotRecognized) {
         val confidence = (uiState as RecognitionUiState.NotRecognized).confidence
         AlertDialog(
-            onDismissRequest = { viewModel.reset() },
-            icon = { Icon(Icons.Filled.Face, contentDescription = null) },
+            onDismissRequest = {
+                viewModel.reset()
+                isScanning = false
+            },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
             title = { Text("No Reconocido") },
             text = {
                 Text(
-                    text = "No se pudo reconocer el rostro.\nConfianza: ${(confidence * 100).toInt()}%\n\n¿Deseas crear un registro manual pendiente de aprobación?",
+                    text = "No se pudo reconocer tu rostro.\nConfianza: ${(confidence * 100).toInt()}%\n\nIntenta nuevamente o usa el botón de Registro Manual desde la pantalla inicial.",
                     textAlign = TextAlign.Center
                 )
             },
             confirmButton = {
                 Button(onClick = {
-                    showManualRegistrationDialog = true
-                    viewModel.stopRecognition()
+                    viewModel.reset()
+                    isScanning = false
                 }) {
-                    Text("Registro Manual")
+                    Text("Intentar de Nuevo")
                 }
             },
             dismissButton = {
@@ -235,109 +328,13 @@ fun FaceRecognitionScreen(
         )
     }
 
-    // Diálogo de registro manual
-    if (showManualRegistrationDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showManualRegistrationDialog = false
-                manualEmployeeId = ""
-                manualEmployeeName = ""
-                manualRegistrationError = null
-                viewModel.reset()
-            },
-            icon = { Icon(Icons.Filled.PersonAdd, contentDescription = null) },
-            title = { Text("Registro Manual") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Ingresa tus datos para crear un registro pendiente de aprobación por un supervisor:",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    OutlinedTextField(
-                        value = manualEmployeeId,
-                        onValueChange = { manualEmployeeId = it },
-                        label = { Text("ID Empleado") },
-                        placeholder = { Text("12345") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = manualEmployeeName,
-                        onValueChange = { manualEmployeeName = it },
-                        label = { Text("Nombre Completo") },
-                        placeholder = { Text("Juan Pérez") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    manualRegistrationError?.let { error ->
-                        Text(
-                            text = error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (manualEmployeeId.isBlank() || manualEmployeeName.isBlank()) {
-                            manualRegistrationError = "Debes completar todos los campos"
-                            return@Button
-                        }
-
-                        viewModel.createManualRegistration(
-                            employeeId = manualEmployeeId,
-                            employeeName = manualEmployeeName,
-                            onSuccess = {
-                                showManualRegistrationDialog = false
-                                manualEmployeeId = ""
-                                manualEmployeeName = ""
-                                manualRegistrationError = null
-                                viewModel.reset()
-
-                                // Mostrar mensaje de éxito
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Registro creado. Pendiente de aprobación.",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-
-                                onNavigateBack()
-                            },
-                            onError = { error ->
-                                manualRegistrationError = error
-                            }
-                        )
-                    },
-                    enabled = manualEmployeeId.isNotBlank() && manualEmployeeName.isNotBlank()
-                ) {
-                    Text("Crear Registro")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showManualRegistrationDialog = false
-                    manualEmployeeId = ""
-                    manualEmployeeName = ""
-                    manualRegistrationError = null
-                    viewModel.reset()
-                }) {
-                    Text("Cancelar")
-                }
-            }
-        )
-    }
+    // (Diálogo de registro manual movido a IdleScreen)
 }
 
 @Composable
 private fun IdleScreen(
     onStartScan: () -> Unit,
+    onStartManualRegistration: () -> Unit,
     onNavigateBack: () -> Unit,
     viewModel: FaceRecognitionViewModel
 ) {
@@ -504,6 +501,16 @@ private fun IdleScreen(
         }
 
         OutlinedButton(
+            onClick = onStartManualRegistration,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedType != null
+        ) {
+            Icon(Icons.Filled.PersonAdd, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Registro Manual")
+        }
+
+        OutlinedButton(
             onClick = onNavigateBack,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -517,6 +524,7 @@ private fun ScanningScreen(
     viewModel: FaceRecognitionViewModel,
     uiState: RecognitionUiState,
     currentChallenge: com.attendance.facerecognition.ml.LivenessChallenge?,
+    isScanning: Boolean,
     onStopScan: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -525,7 +533,10 @@ private fun ScanningScreen(
             modifier = Modifier.fillMaxSize(),
             cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA,
             onFrameAnalyzed = { bitmap ->
-                viewModel.processFrame(bitmap)
+                // Solo procesar frames cuando está escaneando activamente
+                if (isScanning) {
+                    viewModel.processFrame(bitmap)
+                }
             }
         )
 
@@ -637,4 +648,177 @@ private fun ScanningScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ManualPhotoCaptureScreen(
+    employeeId: String,
+    onPhotoCaptured: (android.graphics.Bitmap) -> Unit,
+    onCancel: () -> Unit
+) {
+    var capturedBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Vista previa de cámara
+        CameraPreview(
+            modifier = Modifier.fillMaxSize(),
+            cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA,
+            onFrameAnalyzed = { bitmap ->
+                // Capturar frame continuamente
+                capturedBitmap = bitmap
+            }
+        )
+
+        // Overlay con instrucciones
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Instrucciones arriba
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Registro Manual",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "ID Empleado: $employeeId",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Toma una foto de tu rostro",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            // Botones abajo
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Botón de captura
+                Button(
+                    onClick = {
+                        capturedBitmap?.let { bitmap ->
+                            onPhotoCaptured(bitmap)
+                        }
+                    },
+                    modifier = Modifier
+                        .size(80.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    enabled = capturedBitmap != null
+                ) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = "Capturar",
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+
+                Text(
+                    text = "Capturar Foto",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualRegistrationDialog(
+    attendanceType: AttendanceType,
+    onDismiss: () -> Unit,
+    onConfirm: (employeeId: String) -> Unit
+) {
+    var employeeId by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.PersonAdd, contentDescription = null) },
+        title = { Text("Registro Manual") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Crear registro ${if (attendanceType == AttendanceType.ENTRY) "de ENTRADA" else "de SALIDA"} pendiente de aprobación:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Text(
+                    text = "El sistema buscará tus datos usando tu ID de empleado.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = employeeId,
+                    onValueChange = {
+                        employeeId = it
+                        errorMessage = null
+                    },
+                    label = { Text("ID Empleado") },
+                    placeholder = { Text("12345") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    when {
+                        employeeId.isBlank() -> errorMessage = "Ingresa tu ID de empleado"
+                        else -> onConfirm(employeeId.trim())
+                    }
+                },
+                enabled = employeeId.isNotBlank()
+            ) {
+                Text("Continuar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }

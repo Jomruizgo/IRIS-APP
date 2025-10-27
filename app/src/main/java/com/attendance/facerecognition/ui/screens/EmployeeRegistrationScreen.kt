@@ -1,7 +1,10 @@
 package com.attendance.facerecognition.ui.screens
 
 import androidx.camera.core.CameraSelector
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -9,10 +12,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,6 +28,7 @@ import com.attendance.facerecognition.ui.viewmodels.RegistrationUiState
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -30,6 +37,7 @@ fun EmployeeRegistrationScreen(
     viewModel: EmployeeRegistrationViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
     val photoCount by viewModel.photoCount.collectAsState()
 
@@ -48,12 +56,13 @@ fun EmployeeRegistrationScreen(
         android.Manifest.permission.CAMERA
     )
 
-    // Manejar resultado exitoso
+    // Manejar resultado exitoso y errores
     LaunchedEffect(uiState) {
         when (uiState) {
             is RegistrationUiState.RegistrationSuccess -> {
                 showSuccessDialog = true
             }
+            // NO detener showCamera aquí - se detendrá cuando el usuario cierre el diálogo
             else -> {}
         }
     }
@@ -90,13 +99,9 @@ fun EmployeeRegistrationScreen(
                         showCamera = false
                         viewModel.resetCapture()
                     },
-                    onRegister = {
-                        viewModel.registerEmployee(
-                            name = employeeName,
-                            employeeId = employeeId,
-                            department = department,
-                            position = position
-                        )
+                    onPhotosComplete = {
+                        // Solo cerrar cámara SIN borrar fotos
+                        showCamera = false
                     }
                 )
             } else {
@@ -112,11 +117,22 @@ fun EmployeeRegistrationScreen(
                     onPositionChange = { position = it },
                     photoCount = photoCount,
                     onStartCapture = {
-                        if (cameraPermissionState.status.isGranted) {
-                            showCamera = true
-                            viewModel.startCapture()
-                        } else {
-                            cameraPermissionState.launchPermissionRequest()
+                        // Validar ID antes de comenzar captura
+                        scope.launch {
+                            val isValid = viewModel.validateEmployeeId(employeeId)
+                            if (!isValid) {
+                                // Mostrar error sin activar cámara
+                                viewModel.showError("Ya existe un empleado con ID: $employeeId")
+                                return@launch
+                            }
+
+                            // ID válido, continuar con captura
+                            if (cameraPermissionState.status.isGranted) {
+                                showCamera = true
+                                viewModel.startCapture()
+                            } else {
+                                cameraPermissionState.launchPermissionRequest()
+                            }
                         }
                     },
                     onCancel = onNavigateBack,
@@ -129,6 +145,22 @@ fun EmployeeRegistrationScreen(
                             department = department,
                             position = position
                         )
+                    },
+                    capturedPhotos = viewModel.capturedPhotos.collectAsState().value,
+                    onRegisterWithPhotos = {
+                        viewModel.registerEmployee(
+                            name = employeeName,
+                            employeeId = employeeId,
+                            department = department,
+                            position = position
+                        )
+                    },
+                    onRetakePhotos = {
+                        viewModel.resetCapture()
+                        if (cameraPermissionState.status.isGranted) {
+                            showCamera = true
+                            viewModel.startCapture()
+                        }
                     }
                 )
             }
@@ -185,12 +217,18 @@ fun EmployeeRegistrationScreen(
     if (uiState is RegistrationUiState.Error) {
         val errorMessage = (uiState as RegistrationUiState.Error).message
         AlertDialog(
-            onDismissRequest = { viewModel.resetCapture() },
-            icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) },
+            onDismissRequest = {
+                showCamera = false
+                viewModel.resetCapture()
+            },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
             title = { Text("Error") },
             text = { Text(errorMessage) },
             confirmButton = {
-                Button(onClick = { viewModel.resetCapture() }) {
+                Button(onClick = {
+                    showCamera = false
+                    viewModel.resetCapture()
+                }) {
                     Text("Aceptar")
                 }
             }
@@ -212,7 +250,10 @@ private fun FormScreen(
     onStartCapture: () -> Unit,
     onCancel: () -> Unit,
     canStartCapture: Boolean,
-    onRegisterDirectly: () -> Unit = {}
+    onRegisterDirectly: () -> Unit = {},
+    capturedPhotos: List<android.graphics.Bitmap> = emptyList(),
+    onRegisterWithPhotos: () -> Unit = {},
+    onRetakePhotos: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -318,6 +359,58 @@ private fun FormScreen(
             }
         }
 
+        // Preview de fotos capturadas
+        if (capturedPhotos.isNotEmpty()) {
+            Text(
+                text = "Fotos Capturadas",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(capturedPhotos.size) { index ->
+                    Card(
+                        modifier = Modifier.size(80.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        androidx.compose.foundation.Image(
+                            bitmap = capturedPhotos[index].asImageBitmap(),
+                            contentDescription = "Foto ${index + 1}",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Botones para fotos capturadas
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onRetakePhotos,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("📷 Volver a Capturar")
+                }
+
+                Button(
+                    onClick = onRegisterWithPhotos,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Registrar")
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.weight(1f))
 
         // Botón de captura facial (opcional)
@@ -346,7 +439,7 @@ private fun CameraScreen(
     uiState: RegistrationUiState,
     photoCount: Int,
     onStopCapture: () -> Unit,
-    onRegister: () -> Unit
+    onPhotosComplete: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // Vista previa de cámara
@@ -357,6 +450,47 @@ private fun CameraScreen(
                 viewModel.processFrame(bitmap)
             }
         )
+
+        // Óvalo guía para el rostro
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            val ovalWidth = size.width * 0.75f
+            val ovalHeight = size.height * 0.55f  // Más alto (más ovalado verticalmente)
+            val ovalLeft = (size.width - ovalWidth) / 2
+            val ovalTop = (size.height - ovalHeight) / 2 - 80.dp.toPx()  // Un poco más arriba
+
+            // Fondo semi-transparente oscuro
+            drawRect(
+                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                size = size
+            )
+
+            // Recortar óvalo (área transparente)
+            drawOval(
+                color = androidx.compose.ui.graphics.Color.Transparent,
+                topLeft = androidx.compose.ui.geometry.Offset(ovalLeft, ovalTop),
+                size = androidx.compose.ui.geometry.Size(ovalWidth, ovalHeight),
+                blendMode = androidx.compose.ui.graphics.BlendMode.Clear
+            )
+
+            // Borde del óvalo
+            val borderColor = when (uiState) {
+                is RegistrationUiState.ReadyToCapture -> androidx.compose.ui.graphics.Color.Green
+                is RegistrationUiState.PhotoCaptured -> androidx.compose.ui.graphics.Color.Green
+                is RegistrationUiState.NoFaceDetected -> androidx.compose.ui.graphics.Color.Red
+                is RegistrationUiState.MultipleFacesDetected -> androidx.compose.ui.graphics.Color.Red
+                is RegistrationUiState.FaceNotFacingForward -> androidx.compose.ui.graphics.Color.Yellow
+                else -> androidx.compose.ui.graphics.Color.White
+            }
+
+            drawOval(
+                color = borderColor,
+                topLeft = androidx.compose.ui.geometry.Offset(ovalLeft, ovalTop),
+                size = androidx.compose.ui.geometry.Size(ovalWidth, ovalHeight),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx())
+            )
+        }
 
         // Overlay con información
         Column(
@@ -427,8 +561,8 @@ private fun CameraScreen(
                                 text = when {
                                     photoCount == 0 -> "📷 Foto 1-3: Mira de FRENTE a la cámara"
                                     photoCount in 1..2 -> "📷 Capturando vista frontal..."
-                                    photoCount in 3..5 -> "📷 Foto 4-6: Gira LIGERAMENTE a la IZQUIERDA"
-                                    photoCount in 6..8 -> "📷 Foto 7-9: Gira LIGERAMENTE a la DERECHA"
+                                    photoCount in 3..5 -> "📷 Foto 4-6: Gira tu rostro a tu DERECHA →"
+                                    photoCount in 6..8 -> "📷 Foto 7-9: Gira tu rostro a tu IZQUIERDA ←"
                                     photoCount == 9 -> "📷 Última foto: Vuelve al FRENTE"
                                     else -> "✓ Captura completa"
                                 },
@@ -468,12 +602,13 @@ private fun CameraScreen(
                 ) {
                     if (photoCount >= 7) {
                         Button(
-                            onClick = onRegister,
+                            onClick = onPhotosComplete,  // Solo cerrar cámara, mantener fotos
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Filled.Check, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Registrar Empleado")
+                            Text(if (uiState is RegistrationUiState.AllPhotosCaptured)
+                                "Ver Fotos Capturadas" else "Continuar con $photoCount fotos")
                         }
                     }
 

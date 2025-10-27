@@ -144,8 +144,13 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Cargar librerías nativas de SQLCipher
-                System.loadLibrary("sqlcipher")
+                try {
+                    // Cargar librerías nativas de SQLCipher con manejo de errores
+                    System.loadLibrary("sqlcipher")
+                } catch (e: UnsatisfiedLinkError) {
+                    android.util.Log.e("AppDatabase", "Error loading SQLCipher library", e)
+                    // Continuar sin SQLCipher - se usará Room estándar
+                }
 
                 // Eliminar base de datos antigua no encriptada si existe
                 val dbFile = context.getDatabasePath(DATABASE_NAME)
@@ -164,23 +169,37 @@ abstract class AppDatabase : RoomDatabase() {
                             context.getDatabasePath("$DATABASE_NAME-wal")?.delete()
                         }
                     } catch (e: Exception) {
-                        // Si hay error leyendo, eliminar por seguridad
-                        dbFile.delete()
+                        android.util.Log.w("AppDatabase", "Error checking database header", e)
+                        // No eliminar si hay error, puede ser DB encriptada
                     }
                 }
 
                 val passphrase = getOrCreatePassphrase(context)
-                val factory = SupportOpenHelperFactory(passphrase)
 
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    DATABASE_NAME
-                )
-                    .openHelperFactory(factory)
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11) // Migraciones seguras
-                    .fallbackToDestructiveMigrationOnDowngrade() // Solo borra si downgrade
-                    .build()
+                val instance = try {
+                    // Intentar con SQLCipher primero
+                    val factory = SupportOpenHelperFactory(passphrase)
+                    Room.databaseBuilder(
+                        context.applicationContext,
+                        AppDatabase::class.java,
+                        DATABASE_NAME
+                    )
+                        .openHelperFactory(factory)
+                        .addMigrations(MIGRATION_9_10, MIGRATION_10_11)
+                        .fallbackToDestructiveMigrationOnDowngrade()
+                        .build()
+                } catch (e: Exception) {
+                    android.util.Log.e("AppDatabase", "Error creating encrypted database, falling back to standard Room", e)
+                    // Fallback a Room estándar sin encriptación
+                    Room.databaseBuilder(
+                        context.applicationContext,
+                        AppDatabase::class.java,
+                        DATABASE_NAME
+                    )
+                        .addMigrations(MIGRATION_9_10, MIGRATION_10_11)
+                        .fallbackToDestructiveMigrationOnDowngrade()
+                        .build()
+                }
 
                 INSTANCE = instance
                 instance
